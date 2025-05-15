@@ -198,6 +198,7 @@ endif()
 
 if(USE_GCC OR USE_CLANG)
   set(OPT_DEF_GCC_ATOMICS ON)
+  target_compile_options(sdl-build-options INTERFACE "-std=c11")
 endif()
 
 # Default option knobs
@@ -341,7 +342,7 @@ if (NOT DEFINED SDL_SHARED_ENABLED_BY_DEFAULT)
 endif()
 
 if (NOT DEFINED SDL_TEST_ENABLED_BY_DEFAULT)
-  set(SDL_TEST_ENABLED_BY_DEFAULT ON)
+	set(SDL_TEST_ENABLED_BY_DEFAULT OFF)
 endif()
 
 set(LONGESTOPTIONNAME 0)  # set_option and friends will change this.
