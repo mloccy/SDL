@@ -5,7 +5,6 @@ macro(FindLibraryAndSONAME _LIB)
   string(REGEX REPLACE "\\-" "_" _LNAME "${_UPPERLNAME}")
 
   find_library(${_LNAME}_LIB ${_LIB} PATHS ${FLAS_LIBDIRS})
-
   if(${_LNAME}_LIB MATCHES ".*\\${CMAKE_SHARED_LIBRARY_SUFFIX}.*" AND NOT ${_LNAME}_LIB MATCHES ".*\\${CMAKE_STATIC_LIBRARY_SUFFIX}.*")
     set(${_LNAME}_SHARED TRUE)
   else()
@@ -38,6 +37,7 @@ macro(FindLibraryAndSONAME _LIB)
     message(STATUS "dynamic lib${_LIB} -> ${_LIB_REGEXD}")
     set(${_LNAME}_LIB_SONAME ${_LIB_REGEXD})
   endif()
+
 endmacro()
 
 macro(CheckDLOPEN)
@@ -296,7 +296,7 @@ endmacro()
 macro(CheckX11)
   cmake_push_check_state()
   if(SDL_X11)
-    foreach(_LIB X11 Xext Xcursor Xi Xfixes Xrandr Xrender Xss)
+    foreach(_LIB X11 Xext Xcursor Xi Xfixes Xrandr Xrender Xss Xau xcb)
         FindLibraryAndSONAME("${_LIB}")
     endforeach()
 
@@ -386,7 +386,11 @@ macro(CheckX11)
           list(APPEND SDL_EXTRA_LIBS X11 Xext)
       endif()
 
+
+
       list(APPEND CMAKE_REQUIRED_LIBRARIES ${X11_LIB})
+      list(APPEND CMAKE_REQUIRED_LIBRARIES ${XCB_LIB})
+      list(APPEND CMAKE_REQUIRED_LIBRARIES ${XAU_LIB})
 
       check_c_source_compiles("
           #include <X11/Xlib.h>
@@ -398,6 +402,7 @@ macro(CheckX11)
             XGetEventData(display, cookie);
             XFreeEventData(display, cookie);
             return 0; }" HAVE_XGENERICEVENT)
+
       if(HAVE_XGENERICEVENT)
         set(SDL_VIDEO_DRIVER_X11_SUPPORTS_GENERIC_EVENTS 1)
       endif()

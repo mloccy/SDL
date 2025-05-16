@@ -4,8 +4,22 @@ if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_CURRENT_BINARY_DIR)
   message(FATAL_ERROR "Prevented in-tree build. Please create a build directory outside of the SDL source code and run \"cmake -S ${CMAKE_SOURCE_DIR} -B .\" from there")
 endif()
 
+include (cmake/HunterGate.cmake)
+HunterGate(
+    URL "https://github.com/mloccy/hunter/archive/refs/tags/v0.25.32.tar.gz"
+    SHA1 "59b7f7772f9a0574b3a0941191fcd387437fda00"
+    LOCAL)
+
 # See docs/release_checklist.md
 project(SDL3 LANGUAGES C CXX VERSION "3.0.0")
+
+if (LINUX)
+    hunter_add_package(x11)
+    hunter_add_package(xfixes)
+    hunter_add_package(xi)
+    hunter_add_package(xcursor)
+    hunter_add_package(xrandr)
+endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
   set(SDL3_SUBPROJECT OFF)
