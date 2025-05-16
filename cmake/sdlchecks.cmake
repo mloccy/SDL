@@ -317,6 +317,7 @@ macro(CheckX11)
 
     if(X_INCLUDEDIR)
       target_include_directories(sdl-build-options INTERFACE "${X_INCLUDEDIR}")
+      target_include_directories(sdl-build-options INTERFACE "${X11_ROOT}/include")
       list(APPEND CMAKE_REQUIRED_INCLUDES ${X_INCLUDEDIR})
     endif()
 
