@@ -419,7 +419,7 @@ dep_option(SDL_LIBSAMPLERATE_SHARED "Dynamically load libsamplerate" ON "SDL_LIB
 set_option(SDL_RPATH               "Use an rpath when linking SDL" ${UNIX_SYS})
 set_option(SDL_CLOCK_GETTIME       "Use clock_gettime() instead of gettimeofday()" ${SDL_CLOCK_GETTIME_ENABLED_BY_DEFAULT})
 set_option(SDL_X11                 "Use X11 video driver" ${UNIX_SYS})
-dep_option(SDL_X11_SHARED          "Dynamically load X11 support" ON "SDL_X11" OFF)
+dep_option(SDL_X11_SHARED          "Dynamically load X11 support" OFF "SDL_X11" OFF)
 set(SDL_X11_OPTIONS Xcursor Xdbe XInput Xfixes Xrandr Xscrnsaver XShape)
 foreach(_SUB ${SDL_X11_OPTIONS})
   string(TOUPPER "SDL_X11_${_SUB}" _OPT)

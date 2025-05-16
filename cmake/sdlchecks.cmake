@@ -382,8 +382,8 @@ macro(CheckX11)
           endif()
         endif()
       else()
-          list(APPEND SDL_EXTRA_LDFLAGS "-L${X11_LIBDIR}" "-L${XEXT_LIBDIR}")
-          list(APPEND SDL_EXTRA_LIBS X11 Xext)
+          list(APPEND SDL_EXTRA_LDFLAGS "-L${X11_LIBDIR}" "-L${XEXT_LIBDIR}" "-L${XCB_LIBDIR}" "-L${XAU_LIB}")
+          list(APPEND SDL_EXTRA_LIBS X11 Xext xcb Xau)
       endif()
 
 
