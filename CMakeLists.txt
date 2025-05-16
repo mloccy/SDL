@@ -19,6 +19,7 @@ if (LINUX)
     hunter_add_package(xi)
     hunter_add_package(xcursor)
     hunter_add_package(xrandr)
+
 endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
