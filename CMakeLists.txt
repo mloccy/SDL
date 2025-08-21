@@ -4,6 +4,9 @@ if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_CURRENT_BINARY_DIR)
   message(FATAL_ERROR "Prevented in-tree build. Please create a build directory outside of the SDL source code and run \"cmake -S ${CMAKE_SOURCE_DIR} -B .\" from there")
 endif()
 
+if (WIN32)
+  set(HUNTER_ROOT "C:\\.hunter")
+endif()
 include (cmake/HunterGate.cmake)
 HunterGate(
     URL "https://github.com/mloccy/hunter/archive/refs/tags/v0.25.32.tar.gz"
@@ -51,6 +54,7 @@ endif()
 # Build in parallel under Visual Studio. Not enabled by default.
 if(MSVC)
   target_compile_options(sdl-build-options INTERFACE "/MP")
+  set(CMAKE_DEBUG_POSTFIX "d")
 endif()
 
 # CMake 3.0 expands the "if(${A})" in "set(OFF 1);set(A OFF);if(${A})" to "if(1)"
@@ -2890,7 +2894,6 @@ set(SDL_REVISION "SDL-${SDL_REVISION_CENTER}${SDL_REVISION_SUFFIX}")
 execute_process(COMMAND "${CMAKE_COMMAND}" -E make_directory "${SDL3_BINARY_DIR}/include/SDL3")
 configure_file(include/build_config/SDL_revision.h.cmake include/SDL3/SDL_revision.h @ONLY)
 list(APPEND SDL3_INCLUDE_FILES "${SDL3_BINARY_DIR}/include/SDL3/SDL_revision.h")
-
 if(SDL_FRAMEWORK)
   # With Apple frameworks, headers in the PUBLIC_HEADER property also need to be added as sources
   list(APPEND SDL3_INCLUDE_FILES ${SDL3_TEST_INCLUDE_FILES})
@@ -3227,7 +3230,6 @@ if(SDL_STATIC)
   add_library(SDL3-static STATIC ${SOURCE_FILES})
   add_library(SDL3::SDL3-static ALIAS SDL3-static)
   set_target_properties(SDL3-static PROPERTIES
-    OUTPUT_NAME "${sdl_static_libname}"
     POSITION_INDEPENDENT_CODE "${SDL_STATIC_PIC}"
   )
   if(APPLE)
@@ -3410,6 +3412,9 @@ if(NOT SDL_DISABLE_INSTALL)
       FRAMEWORK DESTINATION "."
       RESOURCE DESTINATION "${SDL_SDL_INSTALL_RESOURCEDIR}"
     )
+    if (MSVC)
+      install(FILES $<TARGET_PDB_FILE:SDL3> DESTINATION bin OPTIONAL)
+    endif()
   endif()
 
   if(SDL_STATIC)
@@ -3418,6 +3423,14 @@ if(NOT SDL_DISABLE_INSTALL)
       FRAMEWORK DESTINATION "."
       RESOURCE DESTINATION "${SDL_SDLstatic_INSTALL_RESOURCEDIR}"
     )
+    if (MSVC)
+
+
+      set(_pdb_file_location $<TARGET_FILE_DIR:SDL3-static>)
+      set(_pdb_base_name $<TARGET_FILE_BASE_NAME:SDL3-static>)
+      set(_pdb_full_path "${_pdb_file_location}/${_pdb_base_name}.pdb")
+      install(FILES $<$<CONFIG:Debug>:${_pdb_full_path}> DESTINATION bin)
+    endif()
   endif()
 
   if(SDL_TEST)
