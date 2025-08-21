@@ -23,6 +23,7 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <SDL3/SDL_test.h>
 #include "testutils.h"
 
 #define MOOSEPIC_W 64
@@ -32,7 +33,7 @@
 #define MOOSEFRAMES_COUNT 10
 
 /* *INDENT-OFF* */ /* clang-format off */
-SDL_Color MooseColors[84] = {
+static SDL_Color MooseColors[84] = {
     {49, 49, 49, 255}, {66, 24, 0, 255}, {66, 33, 0, 255}, {66, 66, 66, 255},
     {66, 115, 49, 255}, {74, 33, 0, 255}, {74, 41, 16, 255}, {82, 33, 8, 255},
     {82, 41, 8, 255}, {82, 49, 16, 255}, {82, 82, 82, 255}, {90, 41, 8, 255},
@@ -57,20 +58,22 @@ SDL_Color MooseColors[84] = {
 };
 /* *INDENT-ON* */ /* clang-format on */
 
-Uint8 MooseFrames[MOOSEFRAMES_COUNT][MOOSEFRAME_SIZE];
+static Uint8 MooseFrames[MOOSEFRAMES_COUNT][MOOSEFRAME_SIZE];
 
-SDL_Renderer *renderer;
-int frame;
-SDL_Texture *MooseTexture;
-SDL_bool done = SDL_FALSE;
+static SDL_Renderer *renderer;
+static int frame;
+static SDL_Texture *MooseTexture;
+static SDL_bool done = SDL_FALSE;
+SDLTest_CommonState *state;
 
-void quit(int rc)
+static void quit(int rc)
 {
     SDL_Quit();
+    SDLTest_CommonDestroyState(state);
     exit(rc);
 }
 
-void UpdateTexture(SDL_Texture *texture)
+static void UpdateTexture(SDL_Texture *texture)
 {
     SDL_Color *color;
     Uint8 *src;
@@ -94,7 +97,7 @@ void UpdateTexture(SDL_Texture *texture)
     SDL_UnlockTexture(texture);
 }
 
-void loop()
+static void loop(void)
 {
     SDL_Event event;
 
@@ -131,8 +134,19 @@ int main(int argc, char **argv)
     SDL_RWops *handle;
     char *filename = NULL;
 
+    /* Initialize test framework */
+    state = SDLTest_CommonCreateState(argv, 0);
+    if (state == NULL) {
+        return 1;
+    }
+
     /* Enable standard application logging */
     SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
+
+    if (!SDLTest_CommonDefaultArgs(state, argc, argv)) {
+        SDLTest_CommonDestroyState(state);
+        return 1;
+    }
 
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Couldn't initialize SDL: %s\n", SDL_GetError());
@@ -155,11 +169,7 @@ int main(int argc, char **argv)
     SDL_RWclose(handle);
 
     /* Create the window and renderer */
-    window = SDL_CreateWindow("Happy Moose",
-                              SDL_WINDOWPOS_UNDEFINED,
-                              SDL_WINDOWPOS_UNDEFINED,
-                              MOOSEPIC_W * 4, MOOSEPIC_H * 4,
-                              SDL_WINDOW_RESIZABLE);
+    window = SDL_CreateWindow("Happy Moose", MOOSEPIC_W * 4, MOOSEPIC_H * 4, SDL_WINDOW_RESIZABLE);
     if (window == NULL) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Couldn't set create window: %s\n", SDL_GetError());
         quit(3);

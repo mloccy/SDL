@@ -23,7 +23,7 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-#include <SDL3/SDL_test_font.h>
+#include <SDL3/SDL_test.h>
 
 static SDL_Window *window;
 static SDL_Renderer *renderer;
@@ -106,7 +106,7 @@ print_modifiers(char **text, size_t *maxlen)
 }
 
 static void
-PrintModifierState()
+PrintModifierState(void)
 {
     char message[512];
     char *spot;
@@ -160,12 +160,12 @@ PrintText(const char *eventtype, const char *text)
     expanded[0] = '\0';
     for (spot = text; *spot; ++spot) {
         size_t length = SDL_strlen(expanded);
-        (void)SDL_snprintf(expanded + length, sizeof expanded - length, "\\x%.2x", (unsigned char)*spot);
+        (void)SDL_snprintf(expanded + length, sizeof(expanded) - length, "\\x%.2x", (unsigned char)*spot);
     }
     SDL_Log("%s Text (%s): \"%s%s\"\n", eventtype, expanded, *text == '"' ? "\\" : "", text);
 }
 
-void loop()
+static void loop(void)
 {
     SDL_Event event;
     /* Check for events */
@@ -249,8 +249,21 @@ void loop()
 
 int main(int argc, char *argv[])
 {
+    SDLTest_CommonState *state;
+
+    /* Initialize test framework */
+    state = SDLTest_CommonCreateState(argv, 0);
+    if (state == NULL) {
+        return 1;
+    }
+
     /* Enable standard application logging */
     SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
+
+    /* Parse commandline */
+    if (!SDLTest_CommonDefaultArgs(state, argc, argv)) {
+        return 1;
+    }
 
     /* Disable mouse emulation */
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
@@ -265,9 +278,7 @@ int main(int argc, char *argv[])
     }
 
     /* Set 640x480 video mode */
-    window = SDL_CreateWindow("CheckKeys Test",
-                              SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                              640, 480, 0);
+    window = SDL_CreateWindow("CheckKeys Test", 640, 480, 0);
     if (window == NULL) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Couldn't create 640x480 window: %s\n",
                      SDL_GetError());
@@ -306,5 +317,6 @@ int main(int argc, char *argv[])
 #endif
 
     SDL_Quit();
+    SDLTest_CommonDestroyState(state);
     return 0;
 }

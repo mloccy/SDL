@@ -21,9 +21,6 @@
 #include <SDL3/SDL_main.h>
 #include "testutils.h"
 
-#define WINDOW_WIDTH  640
-#define WINDOW_HEIGHT 480
-
 static SDLTest_CommonState *state;
 
 typedef struct
@@ -36,8 +33,8 @@ typedef struct
     int scale_direction;
 } DrawState;
 
-DrawState *drawstates;
-int done;
+static DrawState *drawstates;
+static int done;
 
 /* Call this instead of exit(), so we can clean up SDL: atexit() is evil. */
 static void
@@ -47,7 +44,7 @@ quit(int rc)
     exit(rc);
 }
 
-void Draw(DrawState *s)
+static void Draw(DrawState *s)
 {
     SDL_Rect viewport;
 
@@ -77,7 +74,7 @@ void Draw(DrawState *s)
     SDL_RenderPresent(s->renderer);
 }
 
-void loop()
+static void loop(void)
 {
     int i;
     SDL_Event event;
@@ -105,18 +102,22 @@ int main(int argc, char *argv[])
     int frames;
     Uint64 then, now;
 
-    /* Enable standard application logging */
-    SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
-
     /* Initialize test framework */
     state = SDLTest_CommonCreateState(argv, SDL_INIT_VIDEO);
     if (state == NULL) {
         return 1;
     }
 
-    if (!SDLTest_CommonDefaultArgs(state, argc, argv) || !SDLTest_CommonInit(state)) {
-        SDLTest_CommonQuit(state);
+    /* Enable standard application logging */
+    SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
+
+    /* Parse commandline */
+    if (!SDLTest_CommonDefaultArgs(state, argc, argv)) {
         return 1;
+    }
+
+    if (!SDLTest_CommonInit(state)) {
+        quit(1);
     }
 
     drawstates = SDL_stack_alloc(DrawState, state->num_windows);

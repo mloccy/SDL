@@ -36,7 +36,7 @@ static Display *GetDisplay(void)
     return SDL_GetVideoDevice()->driverdata->display;
 }
 
-static Cursor X11_CreateEmptyCursor()
+static Cursor X11_CreateEmptyCursor(void)
 {
     if (x11_empty_cursor == None) {
         Display *display = GetDisplay();
@@ -65,7 +65,7 @@ static void X11_DestroyEmptyCursor(void)
     }
 }
 
-static SDL_Cursor *X11_CreateDefaultCursor()
+static SDL_Cursor *X11_CreateDefaultCursor(void)
 {
     SDL_Cursor *cursor;
 
@@ -347,7 +347,7 @@ static void X11_WarpMouseInternal(Window xwindow, float x, float y)
     videodata->global_mouse_changed = SDL_TRUE;
 }
 
-static void X11_WarpMouse(SDL_Window *window, float x, float y)
+static int X11_WarpMouse(SDL_Window *window, float x, float y)
 {
     SDL_WindowData *data = window->driverdata;
 
@@ -359,6 +359,7 @@ static void X11_WarpMouse(SDL_Window *window, float x, float y)
 #else
     X11_WarpMouseInternal(data->xwindow, x, y);
 #endif
+    return 0;
 }
 
 static int X11_WarpMouseGlobal(float x, float y)
@@ -373,10 +374,8 @@ static int X11_SetRelativeMouseMode(SDL_bool enabled)
     if (X11_Xinput2IsInitialized()) {
         return 0;
     }
-#else
-    SDL_Unsupported();
 #endif
-    return -1;
+    return SDL_Unsupported();
 }
 
 static int X11_CaptureMouse(SDL_Window *window)
@@ -416,6 +415,9 @@ static Uint32 X11_GetGlobalMouseState(float *x, float *y)
 
 #if !SDL_VIDEO_DRIVER_X11_XINPUT2
     videodata->global_mouse_changed = SDL_TRUE;
+#else
+    if (!SDL_X11_HAVE_XINPUT2)
+        videodata->global_mouse_changed = SDL_TRUE;
 #endif
 
     /* check if we have this cached since XInput last saw the mouse move. */

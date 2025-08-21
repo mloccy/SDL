@@ -2,13 +2,6 @@
 
 (www.cmake.org)
 
-SDL's build system was traditionally based on autotools. Over time, this
-approach has suffered from several issues across the different supported 
-platforms.
-To solve these problems, a new build system based on CMake was introduced.
-It is developed in parallel to the legacy autotools build system, so users 
-can experiment with it without complication.
-
 The CMake build system is supported on the following platforms:
 
 * FreeBSD
@@ -19,25 +12,27 @@ The CMake build system is supported on the following platforms:
 * Android
 * Emscripten
 * RiscOS
+* Playstation 2
 * Playstation Vita
+* Nintendo 3DS
+* QNX 7.x/8.x
 
 ## Building SDL
 
-Assuming the source for SDL is located at `~/sdl`
+Assuming the source for SDL is located at `~/sdl`.
 ```sh
-cd ~
-mkdir build
-cd build
-cmake ~/sdl
-cmake --build .
+cmake -S ~/sdl -B ~/build
+cmake --build ~/build
 ```
 
-This will build the static and dynamic versions of SDL in the `~/build` directory.
+This will build SDL in the `~/build` directory.
 Installation can be done using:
 
 ```sh
-cmake --install .        # '--install' requires CMake 3.15, or newer
+cmake --install ~/build --prefix /usr/local        # '--install' requires CMake 3.15, or newer
 ```
+
+This will install SDL to /usr/local.
 
 ## Including SDL in your project
 
@@ -61,7 +56,7 @@ else()
     find_package(SDL3 REQUIRED CONFIG REQUIRED COMPONENTS SDL3)
 endif()
 
-# Create your game executable target as usual 
+# Create your game executable target as usual
 add_executable(mygame WIN32 mygame.c)
 
 # Link to the actual SDL3 library. SDL3::SDL3 is the shared SDL library, SDL3::SDL3-static is the static SDL libarary.
@@ -74,18 +69,53 @@ For CMake to find SDL, it must be installed in [a default location CMake is look
 
 The following components are available, to be used as an argument of `find_package`.
 
-| Component name | Description                                                                                |
-|----------------|--------------------------------------------------------------------------------------------|
-| SDL3           | The SDL3 shared library, available through the `SDL3::SDL3` target [^SDL_TARGET_EXCEPTION] |
-| SDL3-static    | The SDL3 static library, available through the `SDL3::SDL3-static` target                  |
-| SDL3_test      | The SDL3_test static library, available through the `SDL3::SDL3_test` target               |
+| Component name | Description                                                                                                                                                      |
+|----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| SDL3-shared    | The SDL3 shared library, available through the `SDL3::SDL3-shared` target                                                                                        |
+| SDL3-static    | The SDL3 static library, available through the `SDL3::SDL3-static` target                                                                                        |
+| SDL3_test      | The SDL3_test static library, available through the `SDL3::SDL3_test` target                                                                                     |
+| SDL3           | The SDL3 library, available through the `SDL3::SDL3` target. This is an alias of `SDL3::SDL3-shared` or `SDL3::SDL3-static`. This component is always available. |
+| Headers        | The SDL3 headers, available through the `SDL3::Headers` target. This component is always available.                                                              |
 
 
 ### Using a vendored SDL
 
 This only requires a copy of SDL in a subdirectory.
 
-## CMake configuration options for platforms
+## CMake configuration options
+
+### Build optimized library
+
+By default, CMake provides 4 build types: `Debug`, `Release`, `RelWithDebInfo` and `MinSizeRel`.
+The main difference(s) between these are the optimization options and the generation of debug info.
+To configure SDL as an optimized `Release` library, configure SDL with:
+```sh
+cmake ~/SDL -DCMAKE_BUILD_TYPE=Release
+```
+To build it, run:
+```sh
+cmake --build . --config Release
+```
+
+### Pass custom compile options to the compiler
+
+- Use [`CMAKE_<LANG>_FLAGS`](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html) to pass extra
+flags to the compiler.
+- Use [`CMAKE_EXE_LINKER_FLAGS`](https://cmake.org/cmake/help/latest/variable/CMAKE_EXE_LINKER_FLAGS.html) to pass extra option to the linker for executables.
+- Use [`CMAKE_SHARED_LINKER_FLAGS`](https://cmake.org/cmake/help/latest/variable/CMAKE_SHARED_LINKER_FLAGS.html) to pass extra options to the linker for shared libraries.
+
+#### Examples
+
+- build a SDL library optimized for (more) modern x64 microprocessor architectures.
+
+  With gcc or clang:
+    ```sh
+    cmake ~/sdl -DCMAKE_C_FLAGS="-march=x86-64-v3" -DCMAKE_CXX_FLAGS="-march=x86-64-v3"
+    ```
+  With Visual C:
+    ```sh
+    cmake .. -DCMAKE_C_FLAGS="/ARCH:AVX2" -DCMAKE_CXX_FLAGS="/ARCH:AVX2"
+    ```
 
 ### iOS/tvOS
 
@@ -150,5 +180,8 @@ To use, set the following CMake variables when running CMake's configuration sta
     cmake ~/sdl -DCMAKE_SYSTEM_NAME=tvOS -DCMAKE_OSX_SYSROOT=appletvos -DCMAKE_OSX_ARCHITECTURES=arm64`
     ```
 
+- for QNX/aarch64, using the latest, installed SDK:
 
-[^SDL_TARGET_EXCEPTION]: `SDL3::SDL3` can be an ALIAS to a static `SDL3::SDL3-static` target for multiple reasons.
+    ```cmake
+    cmake ~/sdl -DCMAKE_TOOLCHAIN_FILE=~/sdl/build-scripts/cmake-toolchain-qnx-aarch64le.cmake -DSDL_X11=0
+    ```

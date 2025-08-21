@@ -93,7 +93,6 @@ static SDL_VideoDevice *PSP_Create()
     device->CreateSDLWindow = PSP_CreateWindow;
     device->CreateSDLWindowFrom = PSP_CreateWindowFrom;
     device->SetWindowTitle = PSP_SetWindowTitle;
-    device->SetWindowIcon = PSP_SetWindowIcon;
     device->SetWindowPosition = PSP_SetWindowPosition;
     device->SetWindowSize = PSP_SetWindowSize;
     device->ShowWindow = PSP_ShowWindow;
@@ -153,7 +152,7 @@ void PSP_VideoQuit(_THIS)
 {
 }
 
-void PSP_GetDisplayModes(_THIS, SDL_VideoDisplay *display)
+int PSP_GetDisplayModes(_THIS, SDL_VideoDisplay *display)
 {
     SDL_DisplayMode mode;
 
@@ -169,6 +168,7 @@ void PSP_GetDisplayModes(_THIS, SDL_VideoDisplay *display)
     /* 16 bpp secondary mode */
     mode.format = SDL_PIXELFORMAT_BGR565;
     SDL_AddFullscreenDisplayMode(display, &mode);
+    return 0;
 }
 
 int PSP_SetDisplayMode(_THIS, SDL_VideoDisplay *display, SDL_DisplayMode *mode)
@@ -213,9 +213,6 @@ int PSP_CreateWindowFrom(_THIS, SDL_Window *window, const void *data)
 }
 
 void PSP_SetWindowTitle(_THIS, SDL_Window *window)
-{
-}
-void PSP_SetWindowIcon(_THIS, SDL_Window *window, SDL_Surface *icon)
 {
 }
 void PSP_SetWindowPosition(_THIS, SDL_Window *window)

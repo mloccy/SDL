@@ -39,10 +39,9 @@ static int current_alpha = 255;
 static int current_color = 255;
 static SDL_BlendMode blendMode = SDL_BLENDMODE_NONE;
 
-float mouse_begin_x = -1.0f, mouse_begin_y = -1.0f;
-int done;
+static float mouse_begin_x = -1.0f, mouse_begin_y = -1.0f;
 
-void DrawPoints(SDL_Renderer *renderer)
+static void DrawPoints(SDL_Renderer *renderer)
 {
     int i;
     float x, y;
@@ -85,10 +84,9 @@ void DrawPoints(SDL_Renderer *renderer)
 }
 
 #define MAX_LINES 16
-int num_lines = 0;
-SDL_FRect lines[MAX_LINES];
-static int
-add_line(float x1, float y1, float x2, float y2)
+static int num_lines = 0;
+static SDL_FRect lines[MAX_LINES];
+static int add_line(float x1, float y1, float x2, float y2)
 {
     if (num_lines >= MAX_LINES) {
         return 0;
@@ -106,7 +104,7 @@ add_line(float x1, float y1, float x2, float y2)
     return ++num_lines;
 }
 
-void DrawLines(SDL_Renderer *renderer)
+static void DrawLines(SDL_Renderer *renderer)
 {
     int i;
     SDL_Rect viewport;
@@ -129,10 +127,9 @@ void DrawLines(SDL_Renderer *renderer)
 }
 
 #define MAX_RECTS 16
-int num_rects = 0;
-SDL_FRect rects[MAX_RECTS];
-static int
-add_rect(float x1, float y1, float x2, float y2)
+static int num_rects = 0;
+static SDL_FRect rects[MAX_RECTS];
+static int add_rect(float x1, float y1, float x2, float y2)
 {
     if (num_rects >= MAX_RECTS) {
         return 0;
@@ -208,14 +205,15 @@ DrawRectRectIntersections(SDL_Renderer *renderer)
     }
 }
 
-void loop()
+static void loop(void *arg)
 {
     int i;
     SDL_Event event;
+    int *done = (int*)arg;
 
     /* Check for events */
     while (SDL_PollEvent(&event)) {
-        SDLTest_CommonEvent(state, &event, &done);
+        SDLTest_CommonEvent(state, &event, done);
         switch (event.type) {
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
             mouse_begin_x = event.button.x;
@@ -276,7 +274,7 @@ void loop()
         SDL_RenderPresent(renderer);
     }
 #ifdef __EMSCRIPTEN__
-    if (done) {
+    if (*done) {
         emscripten_cancel_main_loop();
     }
 #endif
@@ -287,18 +285,20 @@ int main(int argc, char *argv[])
     int i;
     Uint64 then, now;
     Uint32 frames;
-
-    /* Enable standard application logging */
-    SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
+    int done;
 
     /* Initialize parameters */
-    num_objects = NUM_OBJECTS;
+    num_objects = -1;  /* -1 means not initialized */
 
     /* Initialize test framework */
     state = SDLTest_CommonCreateState(argv, SDL_INIT_VIDEO);
     if (state == NULL) {
         return 1;
     }
+
+    /* Enable standard application logging */
+    SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
+
     for (i = 1; i < argc;) {
         int consumed;
 
@@ -319,6 +319,9 @@ int main(int argc, char *argv[])
                     } else if (SDL_strcasecmp(argv[i + 1], "mod") == 0) {
                         blendMode = SDL_BLENDMODE_MOD;
                         consumed = 2;
+                    } else if (SDL_strcasecmp(argv[i + 1], "mul") == 0) {
+                        blendMode = SDL_BLENDMODE_MUL;
+                        consumed = 2;
                     }
                 }
             } else if (SDL_strcasecmp(argv[i], "--cyclecolor") == 0) {
@@ -327,13 +330,16 @@ int main(int argc, char *argv[])
             } else if (SDL_strcasecmp(argv[i], "--cyclealpha") == 0) {
                 cycle_alpha = SDL_TRUE;
                 consumed = 1;
-            } else if (SDL_isdigit(*argv[i])) {
-                num_objects = SDL_atoi(argv[i]);
-                consumed = 1;
+            } else if (num_objects < 0 && SDL_isdigit(*argv[i])) {
+                char *endptr = NULL;
+                num_objects = (int)SDL_strtol(argv[i], &endptr, 0);
+                if (endptr != argv[i] && *endptr == '\0' && num_objects >= 0) {
+                    consumed = 1;
+                }
             }
         }
         if (consumed < 0) {
-            static const char *options[] = { "[--blend none|blend|add|mod]", "[--cyclecolor]", "[--cyclealpha]", NULL };
+            static const char *options[] = { "[--blend none|blend|add|mod|mul]", "[--cyclecolor]", "[--cyclealpha]", "[count]", NULL };
             SDLTest_CommonLogUsage(state, argv[0], options);
             return 1;
         }
@@ -341,6 +347,10 @@ int main(int argc, char *argv[])
     }
     if (!SDLTest_CommonInit(state)) {
         return 2;
+    }
+
+    if (num_objects < 0) {
+        num_objects = NUM_OBJECTS;
     }
 
     /* Create the windows and initialize the renderers */
@@ -359,18 +369,19 @@ int main(int argc, char *argv[])
     done = 0;
 
 #ifdef __EMSCRIPTEN__
-    emscripten_set_main_loop(loop, 0, 1);
+    emscripten_set_main_loop_arg(loop, &done, 0, 1);
 #else
     while (!done) {
         ++frames;
-        loop();
+        loop(&done);
     }
 #endif
 
-    SDLTest_CommonQuit(state);
-
     /* Print out some timing information */
     now = SDL_GetTicks();
+
+    SDLTest_CommonQuit(state);
+
     if (now > then) {
         double fps = ((double)frames * 1000) / (now - then);
         SDL_Log("%2.2f frames per second\n", fps);

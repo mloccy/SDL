@@ -46,6 +46,11 @@ begin_code.h and close_code.h in the public headers have been renamed to SDL_beg
 
 The vi format comments have been removed from source code. Vim users can use the [editorconfig plugin](https://github.com/editorconfig/editorconfig-vim) to automatically set tab spacing for the SDL coding style.
 
+## SDL_atomic.h
+
+The following structures have been renamed:
+- SDL_atomic_t => SDL_AtomicInt
+
 ## SDL_audio.h
 
 SDL_AudioInit() and SDL_AudioQuit() have been removed. Instead you can call SDL_InitSubSytem() and SDL_QuitSubSytem() with SDL_INIT_AUDIO, which will properly refcount the subsystems. You can choose a specific audio driver using SDL_AUDIO_DRIVER hint.
@@ -70,12 +75,32 @@ should be changed to:
 ```c
     Uint8 *dst_data = NULL;
     int dst_len = 0;
-    if (SDL_ConvertAudioSamples(src_format, src_channels, src_rate, src_len, src_data
-                                dst_format, dst_channels, dst_rate, &dst_len, &dst_data) < 0) {
+    if (SDL_ConvertAudioSamples(src_format, src_channels, src_rate, src_data, src_len
+                                dst_format, dst_channels, dst_rate, &dst_data, &dst_len) < 0) {
         /* error */
     }
     do_something(dst_data, dst_len);
     SDL_free(dst_data);
+```
+
+AUDIO_U16, AUDIO_U16LSB, AUDIO_U16MSB, and AUDIO_U16SYS have been removed. They were not heavily used, and one could not memset a buffer in this format to silence with a single byte value. Use a different audio format.
+
+If you need to convert U16 audio data to a still-supported format at runtime, the fastest, lossless conversion is to AUDIO_S16:
+
+```c
+    /* this converts the buffer in-place. The buffer size does not change. */
+    Sint16 *audio_ui16_to_si16(Uint16 *buffer, const size_t num_samples)
+    {
+        size_t i;
+        const Uint16 *src = buffer;
+        Sint16 *dst = (Sint16 *) buffer;
+
+        for (i = 0; i < num_samples; i++) {
+            dst[i] = (Sint16) (src[i] ^ 0x8000);
+        }
+
+        return dst;
+    }
 ```
 
 
@@ -127,6 +152,8 @@ The SDL_WINDOWEVENT_* events have been moved to top level events, and SDL_WINDOW
 The SDL_EVENT_WINDOW_RESIZED event is always sent, even in response to SDL_SetWindowSize().
 
 The SDL_EVENT_WINDOW_SIZE_CHANGED event has been removed, and you can use SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED to detect window backbuffer size changes.
+
+The gamepad event structures caxis, cbutton, cdevice, ctouchpad, and csensor have been renamed gaxis, gbutton, gdevice, gtouchpad, and gsensor.
 
 SDL_QUERY, SDL_IGNORE, SDL_ENABLE, and SDL_DISABLE have been removed. You can use the functions SDL_SetEventEnabled() and SDL_EventEnabled() to set and query event processing state.
 
@@ -341,6 +368,7 @@ functionality to your app and aid migration. That is located in the
 SDL_AddHintCallback() now returns a standard int result instead of void, returning 0 if the function succeeds or a negative error code if there was an error.
 
 The following hints have been removed:
+* SDL_HINT_VIDEO_HIGHDPI_DISABLED - high DPI support is always enabled
 * SDL_HINT_IDLE_TIMER_DISABLED - use SDL_DisableScreenSaver instead
 * SDL_HINT_MOUSE_RELATIVE_SCALING - mouse coordinates are no longer automatically scaled by the SDL renderer
 * SDL_HINT_RENDER_LOGICAL_SIZE_MODE - the logical size mode is explicitly set with SDL_SetRenderLogicalPresentation()
@@ -447,7 +475,7 @@ The following functions have been removed:
 * SDL_JoystickNameForIndex() - replaced with SDL_GetJoystickInstanceName()
 * SDL_JoystickPathForIndex() - replaced with SDL_GetJoystickInstancePath()
 * SDL_NumJoysticks() - replaced with SDL_GetJoysticks()
- 
+
 ## SDL_keyboard.h
 
 The following functions have been renamed:
@@ -483,7 +511,7 @@ SDL_LoadFunction() now returns `SDL_FunctionPointer` instead of `void *`, and sh
 
 ## SDL_main.h
 
-SDL3 doesn't have a static libSDLmain to link against anymore.  
+SDL3 doesn't have a static libSDLmain to link against anymore.
 Instead SDL_main.h is now a header-only library **and not included by SDL.h anymore**.
 
 Using it is really simple: Just `#include <SDL3/SDL_main.h>` in the source file with your standard
@@ -492,14 +520,14 @@ Using it is really simple: Just `#include <SDL3/SDL_main.h>` in the source file 
 The rest happens automatically: If your target platform needs the SDL_main functionality,
 your main function will be renamed to SDL_main (with a macro, just like in SDL2),
 and the real main-function will be implemented by inline code from SDL_main.h - and if your target
-platform doesn't need it, nothing happens.  
+platform doesn't need it, nothing happens.
 Like in SDL2, if you want to handle the platform-specific main yourself instead of using the SDL_main magic,
 you can `#define SDL_MAIN_HANDLED` before `#include <SDL3/SDL_main.h>` - don't forget to call SDL_SetMainReady()
 
 If you need SDL_main.h in another source file (that doesn't implement main()), you also need to
 `#define SDL_MAIN_HANDLED` there, to avoid that multiple main functions are generated by SDL_main.h
 
-There is currently one platform where this approach doesn't always work: WinRT.  
+There is currently one platform where this approach doesn't always work: WinRT.
 It requires WinMain to be implemented in a C++ source file that's compiled with `/ZW`. If your main
 is implemented in plain C, or you can't use `/ZW` on that file, you can add another .cpp
 source file that just contains `#include <SDL3/SDL_main.h>` and compile that with `/ZW` - but keep
@@ -695,7 +723,7 @@ should be changed to:
 ```
 size_t custom_read(void *ptr, size_t size, size_t nitems, SDL_RWops *stream)
 {
-    Sint64 amount = SDL_RWread(stream, ptr, size * nitems); 
+    Sint64 amount = SDL_RWread(stream, ptr, size * nitems);
     if (amount <= 0) {
         return 0;
     }
@@ -868,7 +896,7 @@ The following functions have been removed:
 * SDL_SensorGetDeviceNonPortableType() - replaced with SDL_GetSensorInstanceNonPortableType()
 * SDL_SensorGetDeviceType() - replaced with SDL_GetSensorInstanceType()
 * SDL_UnlockSensors()
- 
+
 ## SDL_stdinc.h
 
 The standard C headers like stdio.h and stdlib.h are no longer included, you should include them directly in your project if you use non-SDL C runtime functions.
@@ -936,6 +964,8 @@ The following functions have been renamed:
 
 ## SDL_system.h
 
+SDL_AndroidGetExternalStorageState() takes the state as an output parameter and returns 0 if the function succeeds or a negative error code if there was an error.
+
 The following functions have been renamed:
 * SDL_RenderGetD3D11Device() => SDL_GetRenderD3D11Device()
 * SDL_RenderGetD3D9Device() => SDL_GetRenderD3D9Device()
@@ -973,6 +1003,10 @@ If you were using this macro for other things besides SDL ticks values, you can 
 #define SDL_TICKS_PASSED(A, B)  ((Sint32)((B) - (A)) <= 0)
 ```
 
+## SDL_touch.h
+
+SDL_GetNumTouchFingers() returns a negative error code if there was an error.
+
 ## SDL_version.h
 
 SDL_GetRevisionNumber() has been removed from the API, it always returned 0 in SDL 2.0.
@@ -999,6 +1033,15 @@ Rather than iterating over displays using display index, there is a new function
         }
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
     }
+}
+```
+
+SDL_CreateWindow() has been simplified and no longer takes a window position. You can set a position for your window during window creation by creating it hidden and setting the position before showing it:
+```c
+{
+    SDL_Window *window = SDL_CreateWindow("Test", 640, 480, SDL_WINDOW_HIDDEN);
+    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    SDL_ShowWindow(window);
 }
 ```
 
@@ -1049,17 +1092,20 @@ SDL_GL_GetSwapInterval() takes the interval as an output parameter and returns 0
 
 SDL_GL_GetDrawableSize() has been removed. SDL_GetWindowSizeInPixels() can be used in its place.
 
+The SDL_WINDOW_TOOLTIP and SDL_WINDOW_POPUP_MENU window flags are now supported on Windows, Mac (Cocoa), X11, and Wayland. Creating windows with these flags must happen via the `SDL_CreatePopupWindow()` function. This function requires passing in the handle to a valid parent window for the popup, and the popup window is positioned relative to the parent.
+
 The following functions have been renamed:
 * SDL_GetClosestDisplayMode() => SDL_GetClosestFullscreenDisplayMode()
-* SDL_GetDisplayDPI() => SDL_GetDisplayPhysicalDPI()
 * SDL_GetPointDisplayIndex() => SDL_GetDisplayForPoint()
 * SDL_GetRectDisplayIndex() => SDL_GetDisplayForRect()
 * SDL_GetWindowDisplayIndex() => SDL_GetDisplayForWindow()
 * SDL_GetWindowDisplayMode() => SDL_GetWindowFullscreenMode()
+* SDL_IsScreenSaverEnabled() => SDL_ScreenSaverEnabled()
 * SDL_SetWindowDisplayMode() => SDL_SetWindowFullscreenMode()
 
 The following functions have been removed:
 * SDL_GetClosestFullscreenDisplayMode()
+* SDL_GetDisplayDPI() - not reliable across platforms, approximately replaced by multiplying `display_scale` in the structure returned by SDL_GetDesktopDisplayMode() times 160 on iPhone and Android, and 96 on other platforms.
 * SDL_GetDisplayMode()
 * SDL_GetNumDisplayModes() - replaced with SDL_GetFullscreenDisplayModes()
 * SDL_GetNumVideoDisplays() - replaced with SDL_GetDisplays()
@@ -1076,4 +1122,3 @@ SDL_Vulkan_GetInstanceExtensions() no longer takes a window parameter.
 SDL_Vulkan_GetVkGetInstanceProcAddr() now returns `SDL_FunctionPointer` instead of `void *`, and should be cast to PFN_vkGetInstanceProcAddr.
 
 SDL_Vulkan_GetDrawableSize() has been removed. SDL_GetWindowSizeInPixels() can be used in its place.
-

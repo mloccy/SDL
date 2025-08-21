@@ -36,7 +36,7 @@
 
 /* Functions and variables exported from SDL_audio.c for SDL_sysaudio.c */
 
-#ifdef HAVE_LIBSAMPLERATE_H
+#ifdef HAVE_LIBSAMPLERATE
 #include "samplerate.h"
 extern SDL_bool SRC_available;
 extern int SRC_converter;
@@ -66,12 +66,10 @@ typedef void (SDLCALL * SDL_AudioFilter) (struct SDL_AudioCVT * cvt, SDL_AudioFo
 extern SDL_AudioFilter SDL_Convert_S8_to_F32;
 extern SDL_AudioFilter SDL_Convert_U8_to_F32;
 extern SDL_AudioFilter SDL_Convert_S16_to_F32;
-extern SDL_AudioFilter SDL_Convert_U16_to_F32;
 extern SDL_AudioFilter SDL_Convert_S32_to_F32;
 extern SDL_AudioFilter SDL_Convert_F32_to_S8;
 extern SDL_AudioFilter SDL_Convert_F32_to_U8;
 extern SDL_AudioFilter SDL_Convert_F32_to_S16;
-extern SDL_AudioFilter SDL_Convert_F32_to_U16;
 extern SDL_AudioFilter SDL_Convert_F32_to_S32;
 
 /**

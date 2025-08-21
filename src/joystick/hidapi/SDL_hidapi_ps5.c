@@ -278,9 +278,9 @@ static SDL_bool HIDAPI_DriverPS5_IsSupportedDevice(SDL_HIDAPI_Device *device, co
         return SDL_TRUE;
     }
 
-    if (SONY_THIRDPARTY_VENDOR(vendor_id)) {
+    if (HIDAPI_SupportsPlaystationDetection(vendor_id, product_id)) {
         if (device && device->dev) {
-            size = ReadFeatureReport(device->dev, k_EPS5FeatureReportIdCapabilities, data, sizeof data);
+            size = ReadFeatureReport(device->dev, k_EPS5FeatureReportIdCapabilities, data, sizeof(data));
             if (size == 48 && data[2] == 0x28) {
                 /* Supported third party controller */
                 return SDL_TRUE;
@@ -405,7 +405,7 @@ static SDL_bool HIDAPI_DriverPS5_InitDevice(SDL_HIDAPI_Device *device)
            This will also enable enhanced reports over Bluetooth
         */
         if (ReadFeatureReport(device->dev, k_EPS5FeatureReportIdSerialNumber, data, sizeof(data)) >= 7) {
-            (void)SDL_snprintf(serial, sizeof serial, "%.2x-%.2x-%.2x-%.2x-%.2x-%.2x",
+            (void)SDL_snprintf(serial, sizeof(serial), "%.2x-%.2x-%.2x-%.2x-%.2x-%.2x",
                                data[6], data[5], data[4], data[3], data[2], data[1]);
         }
 
@@ -417,7 +417,7 @@ static SDL_bool HIDAPI_DriverPS5_InitDevice(SDL_HIDAPI_Device *device)
         }
     }
 
-    size = ReadFeatureReport(device->dev, k_EPS5FeatureReportIdCapabilities, data, sizeof data);
+    size = ReadFeatureReport(device->dev, k_EPS5FeatureReportIdCapabilities, data, sizeof(data));
     /* Get the device capabilities */
     if (device->vendor_id == USB_VENDOR_SONY) {
         ctx->sensors_supported = SDL_TRUE;
@@ -474,6 +474,12 @@ static SDL_bool HIDAPI_DriverPS5_InitDevice(SDL_HIDAPI_Device *device)
         }
 
         ctx->use_alternate_report = SDL_TRUE;
+    } else if (device->vendor_id == USB_VENDOR_RAZER &&
+               (device->product_id == USB_PRODUCT_RAZER_WOLVERINE_V2_PRO_PS5_WIRED ||
+                device->product_id == USB_PRODUCT_RAZER_WOLVERINE_V2_PRO_PS5_WIRELESS)) {
+        /* The Razer Wolverine V2 Pro doesn't respond to the detection protocol, but has a touchpad and sensors, but no vibration */
+        ctx->sensors_supported = SDL_TRUE;
+        ctx->touchpad_supported = SDL_TRUE;
     }
     ctx->effects_supported = (ctx->lightbar_supported || ctx->vibration_supported || ctx->playerled_supported);
 
@@ -1177,9 +1183,17 @@ static void HIDAPI_DriverPS5_HandleStatePacketCommon(SDL_Joystick *joystick, SDL
         SDL_SendJoystickButton(timestamp, joystick, SDL_CONTROLLER_BUTTON_PS5_RIGHT_PADDLE, (data & 0x80) ? SDL_PRESSED : SDL_RELEASED);
     }
 
-    axis = ((int)packet->ucTriggerLeft * 257) - 32768;
+    if (packet->rgucButtonsAndHat[1] & 0x04) {
+        axis = SDL_JOYSTICK_AXIS_MAX;
+    } else {
+        axis = ((int)packet->ucTriggerLeft * 257) - 32768;
+    }
     SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, axis);
-    axis = ((int)packet->ucTriggerRight * 257) - 32768;
+    if (packet->rgucButtonsAndHat[1] & 0x08) {
+        axis = SDL_JOYSTICK_AXIS_MAX;
+    } else {
+        axis = ((int)packet->ucTriggerRight * 257) - 32768;
+    }
     SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, axis);
     axis = ((int)packet->ucLeftJoystickX * 257) - 32768;
     SDL_SendJoystickAxis(timestamp, joystick, SDL_GAMEPAD_AXIS_LEFTX, axis);

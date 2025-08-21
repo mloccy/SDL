@@ -36,9 +36,9 @@ static Uint64 next_fps_check;
 static Uint32 frames;
 static const int fps_check_delay = 5000;
 
-int done;
+static int done;
 
-void DrawPoints(SDL_Renderer *renderer)
+static void DrawPoints(SDL_Renderer *renderer)
 {
     int i;
     float x, y;
@@ -80,7 +80,7 @@ void DrawPoints(SDL_Renderer *renderer)
     }
 }
 
-void DrawLines(SDL_Renderer *renderer)
+static void DrawLines(SDL_Renderer *renderer)
 {
     int i;
     float x1, y1, x2, y2;
@@ -131,7 +131,7 @@ void DrawLines(SDL_Renderer *renderer)
     }
 }
 
-void DrawRects(SDL_Renderer *renderer)
+static void DrawRects(SDL_Renderer *renderer)
 {
     int i;
     SDL_FRect rect;
@@ -175,7 +175,7 @@ void DrawRects(SDL_Renderer *renderer)
     }
 }
 
-void loop()
+static void loop(void)
 {
     Uint64 now;
     int i;
@@ -251,6 +251,9 @@ int main(int argc, char *argv[])
                     } else if (SDL_strcasecmp(argv[i + 1], "mod") == 0) {
                         blendMode = SDL_BLENDMODE_MOD;
                         consumed = 2;
+                    } else if (SDL_strcasecmp(argv[i + 1], "mul") == 0) {
+                        blendMode = SDL_BLENDMODE_MUL;
+                        consumed = 2;
                     }
                 }
             } else if (SDL_strcasecmp(argv[i], "--cyclecolor") == 0) {
@@ -266,7 +269,7 @@ int main(int argc, char *argv[])
         }
         if (consumed < 0) {
             static const char *options[] = {
-                "[--blend none|blend|add|mod]",
+                "[--blend none|blend|add|mod|mul]",
                 "[--cyclecolor]",
                 "[--cyclealpha]",
                 "[num_objects]",

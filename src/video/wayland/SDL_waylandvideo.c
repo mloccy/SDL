@@ -24,6 +24,7 @@
 #if SDL_VIDEO_DRIVER_WAYLAND
 
 #include "../../events/SDL_events_c.h"
+#include "../../core/linux/SDL_system_theme.h"
 
 #include "SDL_waylandvideo.h"
 #include "SDL_waylandevents_c.h"
@@ -67,13 +68,11 @@ static void display_handle_done(void *data, struct wl_output *output);
 static int Wayland_VideoInit(_THIS);
 
 static int Wayland_GetDisplayBounds(_THIS, SDL_VideoDisplay *display, SDL_Rect *rect);
-static int Wayland_GetDisplayPhysicalDPI(_THIS, SDL_VideoDisplay *display, float *ddpi, float *hdpi, float *vdpi);
-
 static void Wayland_VideoQuit(_THIS);
 
 /* Find out what class name we should use
  * Based on src/video/x11/SDL_x11video.c */
-static char *get_classname()
+static char *get_classname(void)
 {
     /* !!! FIXME: this is probably wrong, albeit harmless in many common cases. From protocol spec:
         "The surface class identifies the general class of applications
@@ -207,7 +206,6 @@ static SDL_VideoDevice *Wayland_CreateDevice(void)
     device->VideoInit = Wayland_VideoInit;
     device->VideoQuit = Wayland_VideoQuit;
     device->GetDisplayBounds = Wayland_GetDisplayBounds;
-    device->GetDisplayPhysicalDPI = Wayland_GetDisplayPhysicalDPI;
     device->GetWindowWMInfo = Wayland_GetWindowWMInfo;
     device->SuspendScreenSaver = Wayland_SuspendScreenSaver;
 
@@ -241,6 +239,7 @@ static SDL_VideoDevice *Wayland_CreateDevice(void)
     device->RestoreWindow = Wayland_RestoreWindow;
     device->SetWindowBordered = Wayland_SetWindowBordered;
     device->SetWindowResizable = Wayland_SetWindowResizable;
+    device->SetWindowPosition = Wayland_SetWindowPosition;
     device->SetWindowSize = Wayland_SetWindowSize;
     device->SetWindowMinimumSize = Wayland_SetWindowMinimumSize;
     device->SetWindowMaximumSize = Wayland_SetWindowMaximumSize;
@@ -251,6 +250,11 @@ static SDL_VideoDevice *Wayland_CreateDevice(void)
     device->SetWindowHitTest = Wayland_SetWindowHitTest;
     device->FlashWindow = Wayland_FlashWindow;
     device->HasScreenKeyboardSupport = Wayland_HasScreenKeyboardSupport;
+
+#ifdef SDL_USE_LIBDBUS
+    if (SDL_SystemTheme_Init())
+        device->system_theme = SDL_SystemTheme_Get();
+#endif
 
     device->SetClipboardText = Wayland_SetClipboardText;
     device->GetClipboardText = Wayland_GetClipboardText;
@@ -272,7 +276,8 @@ static SDL_VideoDevice *Wayland_CreateDevice(void)
     device->free = Wayland_DeleteDevice;
 
     device->quirk_flags = VIDEO_DEVICE_QUIRK_MODE_SWITCHING_EMULATED |
-                          VIDEO_DEVICE_QUIRK_DISABLE_UNSET_FULLSCREEN_ON_MINIMIZE;
+                          VIDEO_DEVICE_QUIRK_DISABLE_UNSET_FULLSCREEN_ON_MINIMIZE |
+                          VIDEO_DEVICE_QUIRK_HAS_POPUP_WINDOW_SUPPORT;
 
     return device;
 }
@@ -296,24 +301,6 @@ static void xdg_output_handle_logical_size(void *data, struct zxdg_output_v1 *xd
                                            int32_t width, int32_t height)
 {
     SDL_DisplayData *driverdata = (SDL_DisplayData *)data;
-
-    if (driverdata->screen_width != 0 && driverdata->screen_height != 0) {
-        /* FIXME: GNOME has a bug where the logical size does not account for
-         * scale, resulting in bogus viewport sizes.
-         *
-         * Until this is fixed, validate that _some_ kind of scaling is being
-         * done (we can't match exactly because fractional scaling can't be
-         * detected otherwise), then override if necessary.
-         * -flibit
-         */
-        const float scale = (float)driverdata->screen_width / (float)width;
-        if ((scale == 1.0f) && (driverdata->scale_factor != 1.0f)) {
-            SDL_LogWarn(
-                SDL_LOG_CATEGORY_VIDEO,
-                "xdg_output scale did not match, overriding with wl_output scale");
-            return;
-        }
-    }
 
     driverdata->screen_width = width;
     driverdata->screen_height = height;
@@ -577,13 +564,22 @@ static void display_handle_done(void *data,
     native_mode.driverdata = driverdata->output;
 
     if (driverdata->has_logical_size) { /* If xdg-output is present... */
-        if (video->viewporter) {
-            /* ...and viewports are supported, calculate the true scale of the output. */
-            driverdata->scale_factor = (float)native_mode.pixel_w / (float)driverdata->screen_width;
+        if (native_mode.pixel_w != driverdata->screen_width || native_mode.pixel_h != driverdata->screen_height) {
+            /* ...and the compositor scales the logical viewport... */
+            if (video->viewporter) {
+                /* ...and viewports are supported, calculate the true scale of the output. */
+                driverdata->scale_factor = (float)native_mode.pixel_w / (float)driverdata->screen_width;
+            } else {
+                /* ...otherwise, the 'native' pixel values are a multiple of the logical screen size. */
+                driverdata->pixel_width = driverdata->screen_width * (int)driverdata->scale_factor;
+                driverdata->pixel_height = driverdata->screen_height * (int)driverdata->scale_factor;
+            }
         } else {
-            /* ...otherwise, the 'native' pixel values are a multiple of the logical screen size. */
-            driverdata->pixel_width = driverdata->screen_width * (int)driverdata->scale_factor;
-            driverdata->pixel_height = driverdata->screen_height * (int)driverdata->scale_factor;
+            /* ...and the output viewport is not scaled in the global compositing
+             * space, the output dimensions need to be divided by the scale factor.
+             */
+            driverdata->screen_width /= (int)driverdata->scale_factor;
+            driverdata->screen_height /= (int)driverdata->scale_factor;
         }
     } else {
         /* Calculate the screen coordinates from the pixel values, if xdg-output isn't present.
@@ -636,23 +632,6 @@ static void display_handle_done(void *data,
         AddEmulatedModes(driverdata, native_mode.pixel_w, native_mode.pixel_h);
     }
 
-    /* Calculate the display DPI */
-    if (driverdata->transform & WL_OUTPUT_TRANSFORM_90) {
-        driverdata->hdpi = driverdata->physical_height ? (((float)driverdata->pixel_height) * 25.4f / driverdata->physical_height) : 0.0f;
-        driverdata->vdpi = driverdata->physical_width ? (((float)driverdata->pixel_width) * 25.4f / driverdata->physical_width) : 0.0f;
-        driverdata->ddpi = SDL_ComputeDiagonalDPI(driverdata->pixel_height,
-                                                  driverdata->pixel_width,
-                                                  ((float)driverdata->physical_height) / 25.4f,
-                                                  ((float)driverdata->physical_width) / 25.4f);
-    } else {
-        driverdata->hdpi = driverdata->physical_width ? (((float)driverdata->pixel_width) * 25.4f / driverdata->physical_width) : 0.0f;
-        driverdata->vdpi = driverdata->physical_height ? (((float)driverdata->pixel_height) * 25.4f / driverdata->physical_height) : 0.0f;
-        driverdata->ddpi = SDL_ComputeDiagonalDPI(driverdata->pixel_width,
-                                                  driverdata->pixel_height,
-                                                  ((float)driverdata->physical_width) / 25.4f,
-                                                  ((float)driverdata->physical_height) / 25.4f);
-    }
-
     if (driverdata->display == 0) {
         /* First time getting display info, create the VideoDisplay */
         SDL_bool send_event = driverdata->videodata->initializing ? SDL_FALSE : SDL_TRUE;
@@ -681,15 +660,14 @@ static const struct wl_output_listener output_listener = {
     display_handle_scale
 };
 
-static void Wayland_add_display(SDL_VideoData *d, uint32_t id)
+static int Wayland_add_display(SDL_VideoData *d, uint32_t id)
 {
     struct wl_output *output;
     SDL_DisplayData *data;
 
     output = wl_registry_bind(d->registry, id, &wl_output_interface, 2);
     if (output == NULL) {
-        SDL_SetError("Failed to retrieve output.");
-        return;
+        return SDL_SetError("Failed to retrieve output.");
     }
     data = (SDL_DisplayData *)SDL_calloc(1, sizeof(*data));
     data->videodata = d;
@@ -717,6 +695,7 @@ static void Wayland_add_display(SDL_VideoData *d, uint32_t id)
         data->xdg_output = zxdg_output_manager_v1_get_xdg_output(data->videodata->xdg_output_manager, output);
         zxdg_output_v1_add_listener(data->xdg_output, &xdg_output_listener, data);
     }
+    return 0;
 }
 
 static void Wayland_free_display(SDL_VideoData *d, uint32_t id)
@@ -960,7 +939,6 @@ int Wayland_VideoInit(_THIS)
     WAYLAND_wl_display_flush(data->display);
 
     Wayland_InitKeyboard(_this);
-    Wayland_InitWin(data);
 
     data->initializing = SDL_FALSE;
 
@@ -977,10 +955,10 @@ static int Wayland_GetDisplayBounds(_THIS, SDL_VideoDisplay *display, SDL_Rect *
     if (display->fullscreen_window &&
         display->fullscreen_window->fullscreen_exclusive &&
         display->fullscreen_window == SDL_GetFocusWindow() &&
-        display->fullscreen_window->fullscreen_mode.screen_w != 0 &&
-        display->fullscreen_window->fullscreen_mode.screen_h != 0) {
-        rect->w = display->fullscreen_window->fullscreen_mode.screen_w;
-        rect->h = display->fullscreen_window->fullscreen_mode.screen_h;
+        display->fullscreen_window->current_fullscreen_mode.screen_w != 0 &&
+        display->fullscreen_window->current_fullscreen_mode.screen_h != 0) {
+        rect->w = display->fullscreen_window->current_fullscreen_mode.screen_w;
+        rect->h = display->fullscreen_window->current_fullscreen_mode.screen_h;
     } else {
         rect->w = display->current_mode->screen_w;
         rect->h = display->current_mode->screen_h;
@@ -988,29 +966,11 @@ static int Wayland_GetDisplayBounds(_THIS, SDL_VideoDisplay *display, SDL_Rect *
     return 0;
 }
 
-static int Wayland_GetDisplayPhysicalDPI(_THIS, SDL_VideoDisplay *display, float *ddpi, float *hdpi, float *vdpi)
-{
-    SDL_DisplayData *driverdata = display->driverdata;
-
-    if (ddpi) {
-        *ddpi = driverdata->ddpi;
-    }
-    if (hdpi) {
-        *hdpi = driverdata->hdpi;
-    }
-    if (vdpi) {
-        *vdpi = driverdata->vdpi;
-    }
-
-    return driverdata->ddpi != 0.0f ? 0 : SDL_SetError("Couldn't get DPI");
-}
-
 static void Wayland_VideoCleanup(_THIS)
 {
     SDL_VideoData *data = _this->driverdata;
     int i, j;
 
-    Wayland_QuitWin(data);
     Wayland_FiniMouse(data);
 
     for (i = _this->num_displays - 1; i >= 0; --i) {

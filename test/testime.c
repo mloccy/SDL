@@ -330,8 +330,8 @@ static Sint32 unifont_draw_glyph(Uint32 codepoint, int rendererID, SDL_FRect *ds
 {
     SDL_Texture *texture;
     const Uint32 textureID = codepoint / UNIFONT_GLYPHS_IN_TEXTURE;
-    SDL_Rect srcrect;
-    srcrect.w = srcrect.h = 16;
+    SDL_FRect srcrect;
+    srcrect.w = srcrect.h = 16.0f;
     if (codepoint > UNIFONT_MAX_CODEPOINT) {
         return 0;
     }
@@ -343,8 +343,8 @@ static Sint32 unifont_draw_glyph(Uint32 codepoint, int rendererID, SDL_FRect *ds
     texture = unifontTexture[UNIFONT_NUM_TEXTURES * rendererID + textureID];
     if (texture != NULL) {
         const Uint32 cInTex = codepoint % UNIFONT_GLYPHS_IN_TEXTURE;
-        srcrect.x = cInTex % UNIFONT_GLYPHS_IN_ROW * 16;
-        srcrect.y = cInTex / UNIFONT_GLYPHS_IN_ROW * 16;
+        srcrect.x = (float)(cInTex % UNIFONT_GLYPHS_IN_ROW * 16);
+        srcrect.y = (float)(cInTex / UNIFONT_GLYPHS_IN_ROW * 16);
         SDL_RenderTexture(state->renderers[rendererID], texture, &srcrect, dst);
     }
     return unifontGlyph[codepoint].width;
@@ -443,11 +443,6 @@ static Uint32 utf8_decode(char *p, size_t len)
     }
 
     return codepoint;
-}
-
-static void usage(void)
-{
-    SDL_Log("usage: testime [--font fontfile]\n");
 }
 
 static void InitInput(void)
@@ -647,41 +642,42 @@ int main(int argc, char *argv[])
 {
     int i, done;
     SDL_Event event;
-    const char *fontname = DEFAULT_FONT;
-
-    /* Enable standard application logging */
-    SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
+    char *fontname = NULL;
 
     /* Initialize test framework */
     state = SDLTest_CommonCreateState(argv, SDL_INIT_VIDEO);
     if (state == NULL) {
         return 1;
     }
-    for (i = 1; i < argc; i++) {
-        SDLTest_CommonArg(state, i);
-    }
-    for (argc--, argv++; argc > 0; argc--, argv++) {
-        if (SDL_strcmp(argv[0], "--help") == 0) {
-            usage();
-            return 0;
-        }
 
-        else if (SDL_strcmp(argv[0], "--font") == 0) {
-            argc--;
-            argv++;
+    /* Enable standard application logging */
+    SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
 
-            if (argc > 0) {
-                fontname = argv[0];
-            } else {
-                usage();
-                return 0;
+    /* Parse commandline */
+    for (i = 1; i < argc;) {
+        int consumed;
+
+        consumed = SDLTest_CommonArg(state, i);
+        if (SDL_strcmp(argv[i], "--font") == 0) {
+            if (*argv[i+1]) {
+                fontname = argv[i+1];
+                consumed = 2;
             }
         }
+        if (consumed <= 0) {
+            static const char *options[] = { "[--font fontfile]", NULL };
+            SDLTest_CommonLogUsage(state, argv[0], options);
+            return 1;
+        }
+
+        i += consumed;
     }
 
     if (!SDLTest_CommonInit(state)) {
         return 2;
     }
+
+    fontname = GetResourceFilename(fontname, DEFAULT_FONT);
 
 #ifdef HAVE_SDL_TTF
     /* Initialize fonts */
@@ -794,6 +790,7 @@ int main(int argc, char *argv[])
             }
         }
     }
+    SDL_free(fontname);
     CleanupVideo();
     SDLTest_CommonQuit(state);
     return 0;

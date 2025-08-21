@@ -24,6 +24,7 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <SDL3/SDL_test.h>
 #include "testutils.h"
 
 static SDL_AudioSpec spec;
@@ -33,15 +34,18 @@ static Uint32 soundlen = 0; /* Length of wave data */
 static int posindex = 0;
 static Uint32 positions[64];
 
+static SDLTest_CommonState *state;
+
 /* Call this instead of exit(), so we can clean up SDL: atexit() is evil. */
 static void
 quit(int rc)
 {
     SDL_Quit();
+    SDLTest_CommonDestroyState(state);
     exit(rc);
 }
 
-void SDLCALL
+static void SDLCALL
 fillerup(void *_pos, Uint8 *stream, int len)
 {
     Uint32 pos = *((Uint32 *)_pos);
@@ -67,19 +71,18 @@ fillerup(void *_pos, Uint8 *stream, int len)
 }
 
 static int done = 0;
-void poked(int sig)
+
+static void poked(int sig)
 {
     done = 1;
 }
 
-static const char *
-devtypestr(int iscapture)
+static const char *devtypestr(int iscapture)
 {
     return iscapture ? "capture" : "output";
 }
 
-static void
-iteration()
+static void iteration(void)
 {
     SDL_Event e;
     SDL_AudioDeviceID dev;
@@ -122,7 +125,7 @@ iteration()
 }
 
 #ifdef __EMSCRIPTEN__
-void loop()
+static void loop(void)
 {
     if (done)
         emscripten_cancel_main_loop();
@@ -135,9 +138,36 @@ int main(int argc, char *argv[])
 {
     int i;
     char *filename = NULL;
+    SDL_Window *window;
+
+    /* Initialize test framework */
+    state = SDLTest_CommonCreateState(argv, 0);
+    if (state == NULL) {
+        return 1;
+    }
 
     /* Enable standard application logging */
     SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
+
+    /* Parse commandline */
+    for (i = 1; i < argc;) {
+        int consumed;
+
+        consumed = SDLTest_CommonArg(state, i);
+        if (!consumed) {
+            if (!filename) {
+                filename = argv[i];
+                consumed = 1;
+            }
+        }
+        if (consumed <= 0) {
+            static const char *options[] = { "[sample.wav]", NULL };
+            SDLTest_CommonLogUsage(state, argv[0], options);
+            exit(1);
+        }
+
+        i += consumed;
+    }
 
     /* Load the SDL library */
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
@@ -146,9 +176,14 @@ int main(int argc, char *argv[])
     }
 
     /* Some targets (Mac CoreAudio) need an event queue for audio hotplug, so make and immediately hide a window. */
-    SDL_MinimizeWindow(SDL_CreateWindow("testaudiohotplug", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 640, 480, 0));
+    window = SDL_CreateWindow("testaudiohotplug", 640, 480, 0);
+    if (window == NULL) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_CreateWindow failed: %s\n", SDL_GetError());
+        quit(1);
+    }
+    SDL_MinimizeWindow(window);
 
-    filename = GetResourceFilename(argc > 1 ? argv[1] : NULL, "sample.wav");
+    filename = GetResourceFilename(filename, "sample.wav");
 
     if (filename == NULL) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s\n", SDL_GetError());
@@ -196,6 +231,6 @@ int main(int argc, char *argv[])
     SDL_QuitSubSystem(SDL_INIT_AUDIO);
     SDL_free(sound);
     SDL_free(filename);
-    SDL_Quit();
+    quit(0);
     return 0;
 }

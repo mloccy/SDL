@@ -203,11 +203,6 @@ expression e;
 - SDL_HINT_VIDEODRIVER
 + SDL_HINT_VIDEO_DRIVER
 
-@@
-@@
-- M_PI
-+ SDL_PI_D
-
 // SDL_GetRevisionNumber() has been removed from the API, it always returned 0 in SDL 2.0.
 @@
 @@
@@ -2095,7 +2090,7 @@ expression e;
 @@
 @@
 - SDL_WINDOWEVENT_SIZE_CHANGED
-+ SDL_EVENT_WINDOW_SIZE_CHANGED
++ SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED
 @@
 @@
 - SDL_WINDOWEVENT_MINIMIZED
@@ -2222,46 +2217,6 @@ expression e;
 + SDL_EVENT_JOYSTICK_BATTERY_UPDATED
 @@
 @@
-- SDL_GAMEPADAXISMOTION
-+ SDL_EVENT_GAMEPAD_AXIS_MOTION
-@@
-@@
-- SDL_GAMEPADBUTTONDOWN
-+ SDL_EVENT_GAMEPAD_BUTTON_DOWN
-@@
-@@
-- SDL_GAMEPADBUTTONUP
-+ SDL_EVENT_GAMEPAD_BUTTON_UP
-@@
-@@
-- SDL_GAMEPADADDED
-+ SDL_EVENT_GAMEPAD_ADDED
-@@
-@@
-- SDL_GAMEPADREMOVED
-+ SDL_EVENT_GAMEPAD_REMOVED
-@@
-@@
-- SDL_GAMEPADREMAPPED
-+ SDL_EVENT_GAMEPAD_REMAPPED
-@@
-@@
-- SDL_GAMEPADTOUCHPADDOWN
-+ SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN
-@@
-@@
-- SDL_GAMEPADTOUCHPADMOTION
-+ SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION
-@@
-@@
-- SDL_GAMEPADTOUCHPADUP
-+ SDL_EVENT_GAMEPAD_TOUCHPAD_UP
-@@
-@@
-- SDL_GAMEPADSENSORUPDATE
-+ SDL_EVENT_GAMEPAD_SENSOR_UPDATE
-@@
-@@
 - SDL_FINGERDOWN
 + SDL_EVENT_FINGER_DOWN
 @@
@@ -2326,11 +2281,6 @@ expression e;
 + SDL_EVENT_LAST
 @@
 @@
-- SDL_GetDisplayDPI
-+ SDL_GetDisplayPhysicalDPI
-  (...)
-@@
-@@
 - SDL_WINDOW_INPUT_GRABBED
 + SDL_WINDOW_MOUSE_GRABBED
 @@
@@ -2376,7 +2326,7 @@ SDL_DisplayMode e;
 @@
 @@
 - SDL_GetRendererOutputSize
-+ SDL_GetCurrentRenderOutputSizeInPixels
++ SDL_GetCurrentRenderOutputSize
   (...)
 @@
 @@
@@ -2497,3 +2447,89 @@ expression e2;
 - SDL_RenderDrawRects
 + SDL_RenderRects
   (...)
+@@
+@@
+- SDL_GL_GetDrawableSize
++ SDL_GetWindowSizeInPixels
+  (...)
+@@
+@@
+- SDL_Metal_GetDrawableSize
++ SDL_GetWindowSizeInPixels
+  (...)
+@@
+@@
+- SDL_Vulkan_GetDrawableSize
++ SDL_GetWindowSizeInPixels
+  (...)
+@@
+@@
+- SDL_IsScreenSaverEnabled
++ SDL_ScreenSaverEnabled
+  (...)
+@@
+SDL_Event e1;
+@@
+- e1.caxis
++ e1.gaxis
+@@
+SDL_Event e1;
+@@
+- e1.cbutton
++ e1.gbutton
+@@
+SDL_Event e1;
+@@
+- e1.cdevice
++ e1.gdevice
+@@
+SDL_Event e1;
+@@
+- e1.ctouchpad
++ e1.gtouchpad
+@@
+SDL_Event e1;
+@@
+- e1.csensor
++ e1.gsensor
+@@
+SDL_Event *e1;
+@@
+- e1->caxis
++ e1->gaxis
+@@
+SDL_Event *e1;
+@@
+- e1->cbutton
++ e1->gbutton
+@@
+SDL_Event *e1;
+@@
+- e1->cdevice
++ e1->gdevice
+@@
+SDL_Event *e1;
+@@
+- e1->ctouchpad
++ e1->gtouchpad
+@@
+SDL_Event *e1;
+@@
+- e1->csensor
++ e1->gsensor
+@@
+expression e1, e2, e3, e4;
+constant c1, c2;
+@@
+- SDL_CreateWindow(e1, c1, c2, e2, e3, e4)
++ SDL_CreateWindow(e1, e2, e3, e4)
+@@
+expression e1, e2, e3, e4;
+constant c1, c2;
+@@
+- SDL_CreateShapedWindow(e1, c1, c2, e2, e3, e4)
++ SDL_CreateShapedWindow(e1, e2, e3, e4)
+typedef SDL_atomic_t, SDL_AtomicInt;
+@@
+- SDL_atomic_t
++ SDL_AtomicInt

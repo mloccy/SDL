@@ -58,13 +58,14 @@ static void SDLCALL UpdateWindowFrameUsableWhileCursorHidden(void *userdata, con
 }
 
 #if !defined(__XBOXONE__) && !defined(__XBOXSERIES__)
-static void WIN_SuspendScreenSaver(_THIS)
+static int WIN_SuspendScreenSaver(_THIS)
 {
     if (_this->suspend_screensaver) {
         SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED);
     } else {
         SetThreadExecutionState(ES_CONTINUOUS);
     }
+    return 0;
 }
 #endif
 
@@ -115,6 +116,7 @@ static SDL_VideoDevice *WIN_CreateDevice(void)
     }
     device->driverdata = data;
     device->wakeup_lock = SDL_CreateMutex();
+    device->system_theme = WIN_GetSystemTheme();
 
 #if !defined(__XBOXONE__) && !defined(__XBOXSERIES__)
     data->userDLL = SDL_LoadObject("USER32.DLL");
@@ -156,7 +158,6 @@ static SDL_VideoDevice *WIN_CreateDevice(void)
     device->RefreshDisplays = WIN_RefreshDisplays;
     device->GetDisplayBounds = WIN_GetDisplayBounds;
     device->GetDisplayUsableBounds = WIN_GetDisplayUsableBounds;
-    device->GetDisplayPhysicalDPI = WIN_GetDisplayPhysicalDPI;
     device->GetDisplayModes = WIN_GetDisplayModes;
     device->SetDisplayMode = WIN_SetDisplayMode;
 #endif
@@ -205,7 +206,6 @@ static SDL_VideoDevice *WIN_CreateDevice(void)
 
     device->shape_driver.CreateShaper = Win32_CreateShaper;
     device->shape_driver.SetWindowShape = Win32_SetWindowShape;
-    device->shape_driver.ResizeWindowShape = Win32_ResizeWindowShape;
 #endif
 
 #if SDL_VIDEO_OPENGL_WGL
@@ -259,6 +259,8 @@ static SDL_VideoDevice *WIN_CreateDevice(void)
 #endif
 
     device->free = WIN_DeleteDevice;
+
+    device->quirk_flags = VIDEO_DEVICE_QUIRK_HAS_POPUP_WINDOW_SUPPORT;
 
     return device;
 }
@@ -676,8 +678,27 @@ SDL_bool SDL_DXGIGetOutputInfo(SDL_DisplayID displayID, int *adapterIndex, int *
 #endif
 }
 
-SDL_bool
-WIN_IsPerMonitorV2DPIAware(_THIS)
+SDL_SystemTheme WIN_GetSystemTheme(void)
+{
+    SDL_SystemTheme theme = SDL_SYSTEM_THEME_LIGHT;
+    HKEY hKey;
+    DWORD dwType = REG_DWORD;
+    DWORD value = ~0;
+    DWORD length = sizeof(value);
+
+    /* Technically this isn't the system theme, but it's the preference for applications */
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        if (RegQueryValueExW(hKey, L"AppsUseLightTheme", 0, &dwType, (LPBYTE)&value, &length) == ERROR_SUCCESS) {
+            if (value == 0) {
+                theme = SDL_SYSTEM_THEME_DARK;
+            }
+        }
+        RegCloseKey(hKey);
+    }
+    return theme;
+}
+
+SDL_bool WIN_IsPerMonitorV2DPIAware(_THIS)
 {
 #if !defined(__XBOXONE__) && !defined(__XBOXSERIES__)
     SDL_VideoData *data = _this->driverdata;
@@ -692,5 +713,3 @@ WIN_IsPerMonitorV2DPIAware(_THIS)
 }
 
 #endif /* SDL_VIDEO_DRIVER_WINDOWS */
-
-/* vim: set ts=4 sw=4 expandtab: */

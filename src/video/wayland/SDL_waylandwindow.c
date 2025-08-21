@@ -24,8 +24,7 @@
 #if SDL_VIDEO_DRIVER_WAYLAND
 
 #include "../SDL_sysvideo.h"
-#include "../../events/SDL_windowevents_c.h"
-#include "../../events/SDL_mouse_c.h"
+#include "../../events/SDL_events_c.h"
 #include "../SDL_egl_c.h"
 #include "SDL_waylandevents_c.h"
 #include "SDL_waylandwindow.h"
@@ -56,7 +55,7 @@ SDL_FORCE_INLINE SDL_bool FloatEqual(float a, float b)
 static SDL_bool SurfaceScaleIsFractional(SDL_Window *window)
 {
     SDL_WindowData *data = window->driverdata;
-    const float scale_value = !(window->fullscreen_exclusive) ? data->windowed_scale_factor : window->fullscreen_mode.display_scale;
+    const float scale_value = !(window->fullscreen_exclusive) ? data->windowed_scale_factor : window->current_fullscreen_mode.display_scale;
     return !FloatEqual(SDL_roundf(scale_value), scale_value);
 }
 
@@ -77,7 +76,7 @@ static SDL_bool WindowNeedsViewport(SDL_Window *window)
         if (SurfaceScaleIsFractional(window)) {
             return SDL_TRUE;
         } else if (window->fullscreen_exclusive) {
-            if (window->fullscreen_mode.screen_w != output_width || window->fullscreen_mode.screen_h != output_height) {
+            if (window->current_fullscreen_mode.screen_w != output_width || window->current_fullscreen_mode.screen_h != output_height) {
                 return SDL_TRUE;
             }
         }
@@ -93,8 +92,8 @@ static void GetBufferSize(SDL_Window *window, int *width, int *height)
     int buf_height;
 
     if (window->fullscreen_exclusive) {
-        buf_width = window->fullscreen_mode.pixel_w;
-        buf_height = window->fullscreen_mode.pixel_h;
+        buf_width = window->current_fullscreen_mode.pixel_w;
+        buf_height = window->current_fullscreen_mode.pixel_h;
     } else {
         /* Round fractional backbuffer sizes halfway away from zero. */
         buf_width = (int)SDL_lroundf((float)data->requested_window_width * data->windowed_scale_factor);
@@ -160,8 +159,8 @@ static void ConfigureWindowGeometry(SDL_Window *window)
         /* If the compositor supplied fullscreen dimensions, use them, otherwise fall back to the display dimensions. */
         const int output_width = data->requested_window_width ? data->requested_window_width : output->screen_width;
         const int output_height = data->requested_window_height ? data->requested_window_height : output->screen_height;
-        window_width = window->fullscreen_mode.screen_w;
-        window_height = window->fullscreen_mode.screen_h;
+        window_width = window->current_fullscreen_mode.screen_w;
+        window_height = window->current_fullscreen_mode.screen_h;
 
         window_size_changed = window_width != window->w || window_height != window->h ||
             data->wl_window_width != output_width || data->wl_window_height != output_height;
@@ -178,10 +177,10 @@ static void ConfigureWindowGeometry(SDL_Window *window)
             } else {
                 /* Always use the mode dimensions for integer scaling. */
                 UnsetDrawSurfaceViewport(window);
-                wl_surface_set_buffer_scale(data->surface, (int32_t)window->fullscreen_mode.display_scale);
+                wl_surface_set_buffer_scale(data->surface, (int32_t)window->current_fullscreen_mode.display_scale);
 
-                data->wl_window_width = window->fullscreen_mode.screen_w;
-                data->wl_window_height = window->fullscreen_mode.screen_h;
+                data->wl_window_width = window->current_fullscreen_mode.screen_w;
+                data->wl_window_height = window->current_fullscreen_mode.screen_h;
             }
 
             data->pointer_scale_x = (float)window_width / (float)data->wl_window_width;
@@ -225,7 +224,7 @@ static void ConfigureWindowGeometry(SDL_Window *window)
             xdg_surface_set_window_geometry(data->shell_surface.xdg.surface, 0, 0, data->wl_window_width, data->wl_window_height);
         }
 
-        if (!viddata->egl_transparency_enabled) {
+        if (!(window->flags & SDL_WINDOW_TRANSPARENT)) {
             region = wl_compositor_create_region(viddata->compositor);
             wl_region_add(region, 0, 0,
                           data->wl_window_width, data->wl_window_height);
@@ -241,6 +240,29 @@ static void ConfigureWindowGeometry(SDL_Window *window)
     /* Unconditionally send the window and drawable size, the video core will deduplicate when required. */
     SDL_SendWindowEvent(window, SDL_EVENT_WINDOW_RESIZED, window_width, window_height);
     SDL_SendWindowEvent(window, SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED, data->drawable_width, data->drawable_height);
+}
+
+static void EnsurePopupPositionIsValid(SDL_Window *window)
+{
+    /* Per the xdg-positioner spec, child popup windows must intersect or at
+     * least be partially adjacent to the parent window.
+     *
+     * Failure to ensure this on a compositor that enforces this restriction
+     * can result in behavior ranging from the window being spuriously closed
+     * to a protocol violation.
+     */
+    if (window->x + window->w < 0) {
+        window->x = -window->w;
+    }
+    if (window->y + window->h < 0) {
+        window->y = -window->h;
+    }
+    if (window->x > window->parent->w) {
+        window->x = window->parent->w;
+    }
+    if (window->y > window->parent->h) {
+        window->y = window->parent->h;
+    }
 }
 
 static void CommitLibdecorFrame(SDL_Window *window)
@@ -405,10 +427,26 @@ static void UpdateWindowFullscreen(SDL_Window *window, SDL_bool fullscreen)
     }
 }
 
-static const struct wl_callback_listener surface_damage_frame_listener;
-
-static void surface_damage_frame_done(void *data, struct wl_callback *cb, uint32_t time)
+static void GetPopupPosition(SDL_Window *popup, int x, int y, int *adj_x, int *adj_y)
 {
+    /* Adjust the popup positioning, if necessary */
+#ifdef HAVE_LIBDECOR_H
+    if (popup->parent->driverdata->shell_surface_type == WAYLAND_SURFACE_LIBDECOR) {
+        libdecor_frame_translate_coordinate(popup->parent->driverdata->shell_surface.libdecor.frame,
+                                            x, y, adj_x, adj_y);
+    } else
+#endif
+    {
+        *adj_x = x;
+        *adj_y = y;
+    }
+}
+
+static const struct wl_callback_listener surface_frame_listener;
+
+static void surface_frame_done(void *data, struct wl_callback *cb, uint32_t time)
+{
+    SDL_Window *w;
     SDL_WindowData *wind = (SDL_WindowData *)data;
 
     /*
@@ -423,13 +461,24 @@ static void surface_damage_frame_done(void *data, struct wl_callback *cb, uint32
                           wind->wl_window_width, wind->wl_window_height);
     }
 
+    if (wind->surface_status == WAYLAND_SURFACE_STATUS_WAITING_FOR_FRAME) {
+        wind->surface_status = WAYLAND_SURFACE_STATUS_SHOWN;
+
+        /* If any child windows are waiting on this window to be shown, show them now */
+        for (w = wind->sdlwindow->first_child; w != NULL; w = w->next_sibling) {
+            if (w->driverdata->surface_status == WAYLAND_SURFACE_STATUS_SHOW_PENDING) {
+                Wayland_ShowWindow(SDL_GetVideoDevice(), w);
+            }
+        }
+    }
+
     wl_callback_destroy(cb);
-    wind->surface_damage_frame_callback = wl_surface_frame(wind->surface);
-    wl_callback_add_listener(wind->surface_damage_frame_callback, &surface_damage_frame_listener, data);
+    wind->surface_frame_callback = wl_surface_frame(wind->surface);
+    wl_callback_add_listener(wind->surface_frame_callback, &surface_frame_listener, data);
 }
 
-static const struct wl_callback_listener surface_damage_frame_listener = {
-    surface_damage_frame_done
+static const struct wl_callback_listener surface_frame_listener = {
+    surface_frame_done
 };
 
 static const struct wl_callback_listener gles_swap_frame_listener;
@@ -543,17 +592,25 @@ static void handle_configure_xdg_toplevel(void *data,
         /* Always send a maximized/restore event; if the event is redundant it will
          * automatically be discarded (see src/events/SDL_windowevents.c)
          *
-         * No, we do not get minimize events from xdg-shell.
+         * No, we do not get minimize events from xdg-shell, however, the minimized
+         * state can be programmatically set. The meaning of 'minimized' is compositor
+         * dependent, but in general, we can assume that the flag should remain set until
+         * the next focused configure event occurs.
          */
-        SDL_SendWindowEvent(window,
-                            maximized ? SDL_EVENT_WINDOW_MAXIMIZED : SDL_EVENT_WINDOW_RESTORED,
-                            0, 0);
+        if (focused || !(window->flags & SDL_WINDOW_MINIMIZED)) {
+            SDL_SendWindowEvent(window,
+                                maximized ? SDL_EVENT_WINDOW_MAXIMIZED : SDL_EVENT_WINDOW_RESTORED,
+                                0, 0);
+        }
     } else {
-        /* If an exclusive fullscreen mode was requested, ensure it is placed on the appropriate output. */
-        if (window->fullscreen_exclusive && wind->fullscreen_display != window->fullscreen_mode.displayID) {
-            SDL_VideoDisplay *disp = SDL_GetVideoDisplay(window->fullscreen_mode.displayID);
+        /* Unconditionally set the output for exclusive fullscreen windows when entering
+         * fullscreen from a compositor event, as where the compositor will actually
+         * place the fullscreen window is unknown.
+         */
+        if (window->fullscreen_exclusive && !wind->fullscreen_was_positioned) {
+            SDL_VideoDisplay *disp = SDL_GetVideoDisplay(window->current_fullscreen_mode.displayID);
             if (disp) {
-                wind->fullscreen_display = disp->id;
+                wind->fullscreen_was_positioned = SDL_TRUE;
                 xdg_toplevel_set_fullscreen(xdg_toplevel, disp->driverdata->output);
             }
         }
@@ -567,6 +624,9 @@ static void handle_configure_xdg_toplevel(void *data,
     wind->requested_window_width = width;
     wind->requested_window_height = height;
     wind->floating = floating;
+    if (wind->surface_status == WAYLAND_SURFACE_STATUS_WAITING_FOR_CONFIGURE) {
+        wind->surface_status = WAYLAND_SURFACE_STATUS_WAITING_FOR_FRAME;
+    }
 }
 
 static void handle_close_xdg_toplevel(void *data, struct xdg_toplevel *xdg_toplevel)
@@ -587,7 +647,24 @@ static void handle_configure_xdg_popup(void *data,
                                        int32_t width,
                                        int32_t height)
 {
-    /* No-op, we don't use x/y and width/height are fixed-size */
+    /* Popups can't be resized, so only position data is sent. */
+    SDL_WindowData *wind = (SDL_WindowData *)data;
+    int offset_x, offset_y;
+
+    /* Adjust the position if it was offset for libdecor */
+    GetPopupPosition(wind->sdlwindow, 0, 0, &offset_x, &offset_y);
+    x -= offset_x;
+    y -= offset_y;
+
+    wind->requested_window_width = width;
+    wind->requested_window_height = height;
+
+    ConfigureWindowGeometry(wind->sdlwindow);
+    SDL_SendWindowEvent(wind->sdlwindow, SDL_EVENT_WINDOW_MOVED, x, y);
+
+    if (wind->surface_status == WAYLAND_SURFACE_STATUS_WAITING_FOR_CONFIGURE) {
+        wind->surface_status = WAYLAND_SURFACE_STATUS_WAITING_FOR_FRAME;
+    }
 }
 
 static void handle_done_xdg_popup(void *data, struct xdg_popup *xdg_popup)
@@ -608,27 +685,6 @@ static const struct xdg_popup_listener popup_listener_xdg = {
     handle_done_xdg_popup,
     handle_repositioned_xdg_popup
 };
-
-#define TOOLTIP_CURSOR_OFFSET 8 /* FIXME: Arbitrary, eyeballed from X tooltip */
-
-static int Wayland_PopupWatch(void *data, SDL_Event *event)
-{
-    if (event->type == SDL_EVENT_MOUSE_MOTION) {
-        SDL_Window *window = (SDL_Window *)data;
-        SDL_WindowData *wind = window->driverdata;
-
-        /* Coordinates might be relative to the popup, which we don't want */
-        if (event->motion.windowID == wind->shell_surface.xdg.roleobj.popup.parentID) {
-            xdg_positioner_set_offset(wind->shell_surface.xdg.roleobj.popup.positioner,
-                                      event->motion.x + TOOLTIP_CURSOR_OFFSET,
-                                      event->motion.y + TOOLTIP_CURSOR_OFFSET);
-            xdg_popup_reposition(wind->shell_surface.xdg.roleobj.popup.popup,
-                                 wind->shell_surface.xdg.roleobj.popup.positioner,
-                                 0);
-        }
-    }
-    return 1;
-}
 
 static void handle_configure_zxdg_decoration(void *data,
                                              struct zxdg_toplevel_decoration_v1 *zxdg_toplevel_decoration_v1,
@@ -744,11 +800,16 @@ static void decoration_frame_configure(struct libdecor_frame *frame,
         /* Always send a maximized/restore event; if the event is redundant it will
          * automatically be discarded (see src/events/SDL_windowevents.c)
          *
-         * No, we do not get minimize events from libdecor.
+         * No, we do not get minimize events from libdecor, however, the minimized
+         * state can be programmatically set. The meaning of 'minimized' is compositor
+         * dependent, but in general, we can assume that the flag should remain set until
+         * the next focused configure event occurs.
          */
-        SDL_SendWindowEvent(window,
-                            maximized ? SDL_EVENT_WINDOW_MAXIMIZED : SDL_EVENT_WINDOW_RESTORED,
-                            0, 0);
+        if (focused || !(window->flags & SDL_WINDOW_MINIMIZED)) {
+            SDL_SendWindowEvent(window,
+                                maximized ? SDL_EVENT_WINDOW_MAXIMIZED : SDL_EVENT_WINDOW_RESTORED,
+                                0, 0);
+        }
     }
 
     /* Similar to maximized/restore events above, send focus events too! */
@@ -760,11 +821,14 @@ static void decoration_frame_configure(struct libdecor_frame *frame,
      * Always assume the configure is wrong.
      */
     if (fullscreen) {
-        /* If an exclusive fullscreen mode was requested, ensure it is placed on the appropriate output. */
-        if (window->fullscreen_exclusive && wind->fullscreen_display != window->fullscreen_mode.displayID) {
-            SDL_VideoDisplay *disp = SDL_GetVideoDisplay(window->fullscreen_mode.displayID);
+        /* Unconditionally set the output for exclusive fullscreen windows when entering
+         * fullscreen from a compositor event, as where the compositor will actually
+         * place the fullscreen window is unknown.
+         */
+        if (window->fullscreen_exclusive && !wind->fullscreen_was_positioned) {
+            SDL_VideoDisplay *disp = SDL_GetVideoDisplay(window->current_fullscreen_mode.displayID);
             if (disp) {
-                wind->fullscreen_display = disp->id;
+                wind->fullscreen_was_positioned = SDL_TRUE;
                 libdecor_frame_set_fullscreen(frame, disp->driverdata->output);
             }
         }
@@ -794,8 +858,9 @@ static void decoration_frame_configure(struct libdecor_frame *frame,
          *
          *      https://gitlab.gnome.org/jadahl/libdecor/-/issues/40
          */
-        const SDL_bool use_cached_size = (floating && !wind->floating) ||
-                                         (window->is_hiding || !!(window->flags & SDL_WINDOW_HIDDEN));
+        const SDL_bool use_cached_size = !maximized && !tiled &&
+                                         ((floating && !wind->floating) ||
+                                          (window->is_hiding || (window->flags & SDL_WINDOW_HIDDEN)));
 
         /* This will never set 0 for width/height unless the function returns false */
         if (use_cached_size || !libdecor_configuration_get_content_size(configuration, frame, &width, &height)) {
@@ -834,6 +899,9 @@ static void decoration_frame_configure(struct libdecor_frame *frame,
     if (!wind->shell_surface.libdecor.initial_configure_seen) {
         LibdecorGetMinContentSize(frame, &wind->system_min_required_width, &wind->system_min_required_height);
         wind->shell_surface.libdecor.initial_configure_seen = SDL_TRUE;
+    }
+    if (wind->surface_status == WAYLAND_SURFACE_STATUS_WAITING_FOR_CONFIGURE) {
+        wind->surface_status = WAYLAND_SURFACE_STATUS_WAITING_FOR_FRAME;
     }
 
     /* Update the resize capability. Since this will change the capabilities and
@@ -924,6 +992,7 @@ static void update_scale_factor(SDL_WindowData *window)
  */
 static void Wayland_move_window(SDL_Window *window, SDL_DisplayData *driverdata)
 {
+    SDL_WindowData *wind = window->driverdata;
     SDL_DisplayID *displays;
     int i;
 
@@ -952,7 +1021,11 @@ static void Wayland_move_window(SDL_Window *window, SDL_DisplayData *driverdata)
                  */
                 SDL_Rect bounds;
                 SDL_GetDisplayBounds(displays[i], &bounds);
-                SDL_SendWindowEvent(window, SDL_EVENT_WINDOW_MOVED, bounds.x, bounds.y);
+
+                wind->last_displayID = displays[i];
+                if (wind->shell_surface_type != WAYLAND_SURFACE_XDG_POPUP) {
+                    SDL_SendWindowEvent(window, SDL_EVENT_WINDOW_MOVED, bounds.x, bounds.y);
+                }
                 break;
             }
         }
@@ -1025,6 +1098,26 @@ static const struct wl_surface_listener surface_listener = {
     handle_surface_enter,
     handle_surface_leave
 };
+
+static void SetKeyboardFocus(SDL_Window *window)
+{
+    SDL_Window *kb_focus = SDL_GetKeyboardFocus();
+    SDL_Window *topmost = window;
+
+    /* Find the topmost parent */
+    while (topmost->parent != NULL) {
+        topmost = topmost->parent;
+    }
+
+    topmost->driverdata->keyboard_focus = window;
+
+    /* Clear the mouse capture flags before changing keyboard focus */
+    if (kb_focus) {
+        kb_focus->flags &= ~SDL_WINDOW_MOUSE_CAPTURE;
+    }
+    window->flags &= ~SDL_WINDOW_MOUSE_CAPTURE;
+    SDL_SetKeyboardFocus(window);
+}
 
 int Wayland_GetWindowWMInfo(_THIS, SDL_Window *window, SDL_SysWMinfo *info)
 {
@@ -1105,6 +1198,24 @@ void Wayland_ShowWindow(_THIS, SDL_Window *window)
 {
     SDL_VideoData *c = _this->driverdata;
     SDL_WindowData *data = window->driverdata;
+    const SDL_bool show_was_pending = data->surface_status == WAYLAND_SURFACE_STATUS_SHOW_PENDING;
+
+    /* If this is a child window, the parent *must* be in the final shown state,
+     * meaning that it has received a configure event, followed by a frame callback.
+     * If not, a race condition can result, with effects ranging from the child
+     * window to spuriously closing to protocol errors.
+     *
+     * If waiting on the parent window, set the pending status and the window will
+     * be shown when the parent is in the shown state.
+     */
+    if (window->parent) {
+        if (window->parent->driverdata->surface_status != WAYLAND_SURFACE_STATUS_SHOWN) {
+            data->surface_status = WAYLAND_SURFACE_STATUS_SHOW_PENDING;
+            return;
+        }
+    }
+
+    data->surface_status = WAYLAND_SURFACE_STATUS_WAITING_FOR_CONFIGURE;
 
     /* Detach any previous buffers before resetting everything, otherwise when
      * calling this a second time you'll get an annoying protocol error!
@@ -1126,58 +1237,70 @@ void Wayland_ShowWindow(_THIS, SDL_Window *window)
     /* Create the shell surface and map the toplevel/popup */
 #ifdef HAVE_LIBDECOR_H
     if (data->shell_surface_type == WAYLAND_SURFACE_LIBDECOR) {
-        if (data->shell_surface.libdecor.frame) {
-            /* If the frame already exists, just set the visibility. */
-            libdecor_frame_set_visibility(data->shell_surface.libdecor.frame, true);
-            libdecor_frame_set_app_id(data->shell_surface.libdecor.frame, c->classname);
+        data->shell_surface.libdecor.frame = libdecor_decorate(c->shell.libdecor,
+                                                               data->surface,
+                                                               &libdecor_frame_interface,
+                                                               data);
+        if (data->shell_surface.libdecor.frame == NULL) {
+            SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "Failed to create libdecor frame!");
         } else {
-            data->shell_surface.libdecor.frame = libdecor_decorate(c->shell.libdecor,
-                                                                   data->surface,
-                                                                   &libdecor_frame_interface,
-                                                                   data);
-            if (data->shell_surface.libdecor.frame == NULL) {
-                SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "Failed to create libdecor frame!");
-            } else {
-                libdecor_frame_set_app_id(data->shell_surface.libdecor.frame, c->classname);
-                libdecor_frame_map(data->shell_surface.libdecor.frame);
-            }
+            libdecor_frame_set_app_id(data->shell_surface.libdecor.frame, c->classname);
+            libdecor_frame_map(data->shell_surface.libdecor.frame);
         }
     } else
 #endif
-        if (c->shell.xdg) {
+        if ((data->shell_surface_type == WAYLAND_SURFACE_XDG_TOPLEVEL || data->shell_surface_type == WAYLAND_SURFACE_XDG_POPUP) && c->shell.xdg) {
         data->shell_surface.xdg.surface = xdg_wm_base_get_xdg_surface(c->shell.xdg, data->surface);
         xdg_surface_set_user_data(data->shell_surface.xdg.surface, data);
         xdg_surface_add_listener(data->shell_surface.xdg.surface, &shell_surface_listener_xdg, data);
 
         if (data->shell_surface_type == WAYLAND_SURFACE_XDG_POPUP) {
-            SDL_Mouse *mouse = SDL_GetMouse();
-            SDL_Window *focused = SDL_GetMouseFocus();
-            SDL_WindowData *focuseddata = focused->driverdata;
+            SDL_Window *parent = window->parent;
+            SDL_WindowData *parent_data = parent->driverdata;
+            struct xdg_surface *parent_xdg_surface = NULL;
+            int position_x = 0, position_y = 0;
 
-            /* This popup may be a child of another popup! */
-            data->shell_surface.xdg.roleobj.popup.parentID = SDL_GetWindowID(focused);
-            data->shell_surface.xdg.roleobj.popup.child = NULL;
-            if (focuseddata->shell_surface_type == WAYLAND_SURFACE_XDG_POPUP) {
-                SDL_assert(focuseddata->shell_surface.xdg.roleobj.popup.child == NULL);
-                focuseddata->shell_surface.xdg.roleobj.popup.child = window;
+            /* Configure the popup parameters */
+#ifdef HAVE_LIBDECOR_H
+            if (parent_data->shell_surface_type == WAYLAND_SURFACE_LIBDECOR) {
+                parent_xdg_surface = libdecor_frame_get_xdg_surface(parent_data->shell_surface.libdecor.frame);
+            } else
+#endif
+            if (parent_data->shell_surface_type == WAYLAND_SURFACE_XDG_TOPLEVEL ||
+                    parent_data->shell_surface_type == WAYLAND_SURFACE_XDG_POPUP) {
+                parent_xdg_surface = parent_data->shell_surface.xdg.surface;
             }
 
-            /* Set up the positioner for the popup */
+            /* Set up the positioner for the popup and configure the constraints */
             data->shell_surface.xdg.roleobj.popup.positioner = xdg_wm_base_create_positioner(c->shell.xdg);
-            xdg_positioner_set_offset(data->shell_surface.xdg.roleobj.popup.positioner,
-                                      mouse->x + TOOLTIP_CURSOR_OFFSET,
-                                      mouse->y + TOOLTIP_CURSOR_OFFSET);
+            xdg_positioner_set_anchor(data->shell_surface.xdg.roleobj.popup.positioner, XDG_POSITIONER_ANCHOR_TOP_LEFT);
+            xdg_positioner_set_anchor_rect(data->shell_surface.xdg.roleobj.popup.positioner, 0, 0, parent->w, parent->h);
+            xdg_positioner_set_constraint_adjustment(data->shell_surface.xdg.roleobj.popup.positioner,
+                                                     XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_X | XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_Y);
+            xdg_positioner_set_gravity(data->shell_surface.xdg.roleobj.popup.positioner, XDG_POSITIONER_GRAVITY_BOTTOM_RIGHT);
+            xdg_positioner_set_size(data->shell_surface.xdg.roleobj.popup.positioner, window->w, window->h);
+
+            /* Set the popup initial position */
+            GetPopupPosition(window, window->x, window->y, &position_x, &position_y);
+            xdg_positioner_set_offset(data->shell_surface.xdg.roleobj.popup.positioner, position_x, position_y);
 
             /* Assign the popup role */
             data->shell_surface.xdg.roleobj.popup.popup = xdg_surface_get_popup(data->shell_surface.xdg.surface,
-                                                                                focuseddata->shell_surface.xdg.surface,
+                                                                                parent_xdg_surface,
                                                                                 data->shell_surface.xdg.roleobj.popup.positioner);
             xdg_popup_add_listener(data->shell_surface.xdg.roleobj.popup.popup, &popup_listener_xdg, data);
 
-            /* For tooltips, track mouse motion so it follows the cursor */
             if (window->flags & SDL_WINDOW_TOOLTIP) {
-                if (xdg_popup_get_version(data->shell_surface.xdg.roleobj.popup.popup) >= 3) {
-                    SDL_AddEventWatch(Wayland_PopupWatch, window);
+                struct wl_region *region;
+
+                /* Tooltips can't be interacted with, so turn off the input region to avoid blocking anything behind them */
+                region = wl_compositor_create_region(c->compositor);
+                wl_region_add(region, 0, 0, 0, 0);
+                wl_surface_set_input_region(data->surface, region);
+                wl_region_destroy(region);
+            } else if (window->flags & SDL_WINDOW_POPUP_MENU) {
+                if (window->parent == SDL_GetKeyboardFocus()) {
+                    SetKeyboardFocus(window);
                 }
             }
         } else {
@@ -1289,7 +1412,11 @@ void Wayland_ShowWindow(_THIS, SDL_Window *window)
      * Roundtrip required to avoid a possible protocol violation when
      * HideWindow was called immediately before ShowWindow.
      */
-    WAYLAND_wl_display_roundtrip(c->display);
+    if (!show_was_pending) {
+        while (data->surface_status == WAYLAND_SURFACE_STATUS_WAITING_FOR_CONFIGURE) {
+            WAYLAND_wl_display_roundtrip(c->display);
+        }
+    }
 }
 
 static void Wayland_ReleasePopup(_THIS, SDL_Window *popup)
@@ -1310,17 +1437,19 @@ static void Wayland_ReleasePopup(_THIS, SDL_Window *popup)
         return;
     }
 
-    /* Release the child _first_, otherwise a protocol error triggers */
-    if (popupdata->shell_surface.xdg.roleobj.popup.child != NULL) {
-        Wayland_ReleasePopup(_this, popupdata->shell_surface.xdg.roleobj.popup.child);
-        popupdata->shell_surface.xdg.roleobj.popup.child = NULL;
-    }
+    if (popup->flags & SDL_WINDOW_POPUP_MENU) {
+        if (popup == SDL_GetKeyboardFocus()) {
+            SDL_Window *new_focus = popup->parent;
 
-    if (popup->flags & SDL_WINDOW_TOOLTIP) {
-        if (xdg_popup_get_version(popupdata->shell_surface.xdg.roleobj.popup.popup) >= 3) {
-            SDL_DelEventWatch(Wayland_PopupWatch, popup);
+            /* Find the highest level window that isn't being hidden or destroyed. */
+            while (new_focus->parent != NULL && (new_focus->is_hiding || new_focus->is_destroying)) {
+                new_focus = new_focus->parent;
+            }
+
+            SetKeyboardFocus(new_focus);
         }
     }
+
     xdg_popup_destroy(popupdata->shell_surface.xdg.roleobj.popup.popup);
     xdg_positioner_destroy(popupdata->shell_surface.xdg.roleobj.popup.positioner);
     popupdata->shell_surface.xdg.roleobj.popup.popup = NULL;
@@ -1332,20 +1461,24 @@ void Wayland_HideWindow(_THIS, SDL_Window *window)
     SDL_VideoData *data = _this->driverdata;
     SDL_WindowData *wind = window->driverdata;
 
+    wind->surface_status = WAYLAND_SURFACE_STATUS_HIDDEN;
+
     if (wind->server_decoration) {
         zxdg_toplevel_decoration_v1_destroy(wind->server_decoration);
         wind->server_decoration = NULL;
     }
 
     /* Be sure to detach after this is done, otherwise ShowWindow crashes! */
-    wl_surface_attach(wind->surface, NULL, 0, 0);
-    wl_surface_commit(wind->surface);
+    if (wind->shell_surface_type != WAYLAND_SURFACE_XDG_POPUP) {
+        wl_surface_attach(wind->surface, NULL, 0, 0);
+        wl_surface_commit(wind->surface);
+    }
 
 #ifdef HAVE_LIBDECOR_H
     if (wind->shell_surface_type == WAYLAND_SURFACE_LIBDECOR) {
         if (wind->shell_surface.libdecor.frame) {
-            libdecor_frame_set_visibility(wind->shell_surface.libdecor.frame, false);
-            libdecor_frame_set_app_id(wind->shell_surface.libdecor.frame, data->classname);
+            libdecor_frame_unref(wind->shell_surface.libdecor.frame);
+            wind->shell_surface.libdecor.frame = NULL;
         }
     } else
 #endif
@@ -1466,7 +1599,7 @@ int Wayland_FlashWindow(_THIS, SDL_Window *window, SDL_FlashOperation operation)
     return 0;
 }
 
-void handle_preferred_scale_changed(void *data,
+static void handle_preferred_scale_changed(void *data,
                                     struct wp_fractional_scale_v1 *wp_fractional_scale_v1,
                                     uint preferred_scale)
 {
@@ -1583,8 +1716,8 @@ void Wayland_SetWindowFullscreen(_THIS, SDL_Window *window,
     /* Called from within a configure event or the window is a popup, drop it. */
     if (wind->in_fullscreen_transition || wind->shell_surface_type == WAYLAND_SURFACE_XDG_POPUP) {
         if (!fullscreen) {
-            /* Clear the display ID so it will be set next time. */
-            wind->fullscreen_display = 0;
+            /* Clear the fullscreen positioned flag. */
+            wind->fullscreen_was_positioned = SDL_FALSE;
         }
         return;
     }
@@ -1592,7 +1725,7 @@ void Wayland_SetWindowFullscreen(_THIS, SDL_Window *window,
     /* Don't send redundant fullscreen set/unset events. */
     if (wind->is_fullscreen != fullscreen) {
         wind->is_fullscreen = fullscreen;
-        wind->fullscreen_display = fullscreen ? display->id : 0;
+        wind->fullscreen_was_positioned = fullscreen ? SDL_TRUE : SDL_FALSE;
         SetFullscreen(window, fullscreen ? output : NULL);
 
         /* Roundtrip required to receive the updated window dimensions */
@@ -1601,10 +1734,12 @@ void Wayland_SetWindowFullscreen(_THIS, SDL_Window *window,
         /*
          * If the window is already fullscreen, this is likely a request to switch between
          * fullscreen and fullscreen desktop, change outputs, or change the video mode.
-         * Update the geometry and trigger a commit.
+         *
+         * If the window is already positioned on the target output, just update the
+         * window geometry.
          */
-        if (wind->fullscreen_display != display->id) {
-            wind->fullscreen_display = display->id;
+        if (wind->last_displayID != display->id) {
+            wind->fullscreen_was_positioned = SDL_TRUE;
             SetFullscreen(window, output);
         } else {
             ConfigureWindowGeometry(window);
@@ -1733,9 +1868,7 @@ void Wayland_MinimizeWindow(_THIS, SDL_Window *window)
     SDL_VideoData *viddata = _this->driverdata;
     SDL_WindowData *wind = window->driverdata;
 
-    if (wind->shell_surface_type == WAYLAND_SURFACE_XDG_POPUP) {
-        return;
-    }
+    window->flags |= SDL_WINDOW_MINIMIZED;
 
 #ifdef HAVE_LIBDECOR_H
     if (wind->shell_surface_type == WAYLAND_SURFACE_LIBDECOR) {
@@ -1745,7 +1878,7 @@ void Wayland_MinimizeWindow(_THIS, SDL_Window *window)
         libdecor_frame_set_minimized(wind->shell_surface.libdecor.frame);
     } else
 #endif
-        if (viddata->shell.xdg) {
+        if (wind->shell_surface_type == WAYLAND_SURFACE_XDG_TOPLEVEL && viddata->shell.xdg) {
         if (wind->shell_surface.xdg.roleobj.toplevel == NULL) {
             return; /* Can't do anything yet, wait for ShowWindow */
         }
@@ -1801,7 +1934,7 @@ int Wayland_CreateWindow(_THIS, SDL_Window *window)
     SDL_WindowData *data;
     SDL_VideoData *c;
 
-    data = SDL_calloc(1, sizeof *data);
+    data = SDL_calloc(1, sizeof(*data));
     if (data == NULL) {
         return SDL_OutOfMemory();
     }
@@ -1821,6 +1954,10 @@ int Wayland_CreateWindow(_THIS, SDL_Window *window)
     }
     if (window->y == SDL_WINDOWPOS_UNDEFINED) {
         window->y = 0;
+    }
+
+    if (SDL_WINDOW_IS_POPUP(window)) {
+        EnsurePopupPositionIsValid(window);
     }
 
     data->waylandData = c;
@@ -1867,8 +2004,8 @@ int Wayland_CreateWindow(_THIS, SDL_Window *window)
     }
 
     /* Fire a callback when the compositor wants a new frame to set the surface damage region. */
-    data->surface_damage_frame_callback = wl_surface_frame(data->surface);
-    wl_callback_add_listener(data->surface_damage_frame_callback, &surface_damage_frame_listener, data);
+    data->surface_frame_callback = wl_surface_frame(data->surface);
+    wl_callback_add_listener(data->surface_frame_callback, &surface_frame_listener, data);
 
 #ifdef SDL_VIDEO_DRIVER_WAYLAND_QT_TOUCH
     if (c->surface_extension) {
@@ -1880,12 +2017,18 @@ int Wayland_CreateWindow(_THIS, SDL_Window *window)
     }
 #endif /* SDL_VIDEO_DRIVER_WAYLAND_QT_TOUCH */
 
+    if (window->flags & SDL_WINDOW_TRANSPARENT) {
+        if (_this->gl_config.alpha_size == 0) {
+            _this->gl_config.alpha_size = 8;
+        }
+    }
+
     if (window->flags & SDL_WINDOW_OPENGL) {
         data->egl_window = WAYLAND_wl_egl_window_create(data->surface, data->drawable_width, data->drawable_height);
 
 #if SDL_VIDEO_OPENGL_EGL
         /* Create the GLES window surface */
-        data->egl_surface = SDL_EGL_CreateSurface(_this, (NativeWindowType)data->egl_window);
+        data->egl_surface = SDL_EGL_CreateSurface(_this, window, (NativeWindowType)data->egl_window);
 
         if (data->egl_surface == EGL_NO_SURFACE) {
             return -1; /* SDL_EGL_CreateSurface should have set error */
@@ -1917,21 +2060,18 @@ int Wayland_CreateWindow(_THIS, SDL_Window *window)
     /* We may need to create an idle inhibitor for this new window */
     Wayland_SuspendScreenSaver(_this);
 
-#define IS_POPUP(window) \
-    (window->flags & (SDL_WINDOW_TOOLTIP | SDL_WINDOW_POPUP_MENU))
 #ifdef HAVE_LIBDECOR_H
-    if (c->shell.libdecor && !IS_POPUP(window)) {
+    if (c->shell.libdecor && !SDL_WINDOW_IS_POPUP(window)) {
         data->shell_surface_type = WAYLAND_SURFACE_LIBDECOR;
     } else
 #endif
         if (c->shell.xdg) {
-        if (IS_POPUP(window)) {
+        if (SDL_WINDOW_IS_POPUP(window)) {
             data->shell_surface_type = WAYLAND_SURFACE_XDG_POPUP;
         } else {
             data->shell_surface_type = WAYLAND_SURFACE_XDG_TOPLEVEL;
         }
     } /* All other cases will be WAYLAND_SURFACE_UNKNOWN */
-#undef IS_POPUP
 
     return 0;
 }
@@ -1944,6 +2084,24 @@ void Wayland_SetWindowMinimumSize(_THIS, SDL_Window *window)
 void Wayland_SetWindowMaximumSize(_THIS, SDL_Window *window)
 {
     SetMinMaxDimensions(window, SDL_TRUE);
+}
+
+void Wayland_SetWindowPosition(_THIS, SDL_Window *window)
+{
+    SDL_WindowData *wind = window->driverdata;
+
+    /* Only popup windows can be positioned relative to the parent. */
+    if (wind->shell_surface_type == WAYLAND_SURFACE_XDG_POPUP && !(window->flags & SDL_WINDOW_HIDDEN) &&
+        xdg_popup_get_version(wind->shell_surface.xdg.roleobj.popup.popup) >= XDG_POPUP_REPOSITION_SINCE_VERSION) {
+        int x, y;
+
+        EnsurePopupPositionIsValid(window);
+        GetPopupPosition(window, window->x, window->y, &x, &y);
+        xdg_positioner_set_offset(wind->shell_surface.xdg.roleobj.popup.positioner, x, y);
+        xdg_popup_reposition(wind->shell_surface.xdg.roleobj.popup.popup,
+                             wind->shell_surface.xdg.roleobj.popup.positioner,
+                             0);
+    }
 }
 
 void Wayland_SetWindowSize(_THIS, SDL_Window *window)
@@ -2005,13 +2163,13 @@ void Wayland_SetWindowTitle(_THIS, SDL_Window *window)
     WAYLAND_wl_display_flush(viddata->display);
 }
 
-void Wayland_SuspendScreenSaver(_THIS)
+int Wayland_SuspendScreenSaver(_THIS)
 {
     SDL_VideoData *data = _this->driverdata;
 
 #if SDL_USE_LIBDBUS
     if (SDL_DBus_ScreensaverInhibit(_this->suspend_screensaver)) {
-        return;
+        return 0;
     }
 #endif
 
@@ -2040,6 +2198,8 @@ void Wayland_SuspendScreenSaver(_THIS)
             window = window->next;
         }
     }
+
+    return 0;
 }
 
 void Wayland_DestroyWindow(_THIS, SDL_Window *window)
@@ -2047,7 +2207,7 @@ void Wayland_DestroyWindow(_THIS, SDL_Window *window)
     SDL_VideoData *data = _this->driverdata;
     SDL_WindowData *wind = window->driverdata;
 
-    if (data) {
+    if (data && wind) {
 #if SDL_VIDEO_OPENGL_EGL
         if (wind->egl_surface) {
             SDL_EGL_DestroySurface(_this, wind->egl_surface);
@@ -2081,8 +2241,8 @@ void Wayland_DestroyWindow(_THIS, SDL_Window *window)
             wl_callback_destroy(wind->gles_swap_frame_callback);
         }
 
-        if (wind->surface_damage_frame_callback) {
-            wl_callback_destroy(wind->surface_damage_frame_callback);
+        if (wind->surface_frame_callback) {
+            wl_callback_destroy(wind->surface_frame_callback);
         }
 
 #ifdef SDL_VIDEO_DRIVER_WAYLAND_QT_TOUCH
@@ -2098,45 +2258,6 @@ void Wayland_DestroyWindow(_THIS, SDL_Window *window)
         WAYLAND_wl_display_flush(data->display);
     }
     window->driverdata = NULL;
-}
-
-static void EGLTransparencyChangedCallback(void *userdata, const char *name, const char *oldValue, const char *newValue)
-{
-    const SDL_bool oldval = SDL_GetStringBoolean(oldValue, SDL_FALSE);
-    const SDL_bool newval = SDL_GetStringBoolean(newValue, SDL_FALSE);
-
-    if (oldval != newval) {
-        SDL_Window *window;
-        SDL_VideoData *viddata = (SDL_VideoData *)userdata;
-        SDL_VideoDevice *dev = SDL_GetVideoDevice();
-
-        viddata->egl_transparency_enabled = newval;
-
-        /* Iterate over all windows and update the surface opaque regions */
-        for (window = dev->windows; window != NULL; window = window->next) {
-            SDL_WindowData *wind = window->driverdata;
-
-            if (!newval) {
-                struct wl_region *region = wl_compositor_create_region(wind->waylandData->compositor);
-                wl_region_add(region, 0, 0, wind->wl_window_width, wind->wl_window_height);
-                wl_surface_set_opaque_region(wind->surface, region);
-                wl_region_destroy(region);
-            } else {
-                wl_surface_set_opaque_region(wind->surface, NULL);
-            }
-        }
-    }
-}
-
-void Wayland_InitWin(SDL_VideoData *data)
-{
-    data->egl_transparency_enabled = SDL_GetHintBoolean(SDL_HINT_VIDEO_EGL_ALLOW_TRANSPARENCY, SDL_FALSE);
-    SDL_AddHintCallback(SDL_HINT_VIDEO_EGL_ALLOW_TRANSPARENCY, EGLTransparencyChangedCallback, data);
-}
-
-void Wayland_QuitWin(SDL_VideoData *data)
-{
-    SDL_DelHintCallback(SDL_HINT_VIDEO_EGL_ALLOW_TRANSPARENCY, EGLTransparencyChangedCallback, data);
 }
 
 #endif /* SDL_VIDEO_DRIVER_WAYLAND */

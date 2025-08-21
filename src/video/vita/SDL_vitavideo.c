@@ -109,7 +109,6 @@ static SDL_VideoDevice *VITA_Create()
     device->CreateSDLWindow = VITA_CreateWindow;
     device->CreateSDLWindowFrom = VITA_CreateWindowFrom;
     device->SetWindowTitle = VITA_SetWindowTitle;
-    device->SetWindowIcon = VITA_SetWindowIcon;
     device->SetWindowPosition = VITA_SetWindowPosition;
     device->SetWindowSize = VITA_SetWindowSize;
     device->ShowWindow = VITA_ShowWindow;
@@ -276,7 +275,7 @@ int VITA_CreateWindow(_THIS, SDL_Window *window)
             _this->gl_config.minor_version = 1;
             _this->gl_config.profile_mask = SDL_GL_CONTEXT_PROFILE_ES;
         }
-        wdata->egl_surface = SDL_EGL_CreateSurface(_this, &win);
+        wdata->egl_surface = SDL_EGL_CreateSurface(_this, window, &win);
         if (wdata->egl_surface == EGL_NO_SURFACE) {
             return SDL_SetError("Could not create GLES window surface");
         }
@@ -302,9 +301,6 @@ int VITA_CreateWindowFrom(_THIS, SDL_Window *window, const void *data)
 }
 
 void VITA_SetWindowTitle(_THIS, SDL_Window *window)
-{
-}
-void VITA_SetWindowIcon(_THIS, SDL_Window *window, SDL_Surface *icon)
 {
 }
 void VITA_SetWindowPosition(_THIS, SDL_Window *window)

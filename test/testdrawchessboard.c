@@ -20,13 +20,15 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <SDL3/SDL_test.h>
 
-SDL_Window *window;
-SDL_Renderer *renderer;
-SDL_Surface *surface;
-int done;
+static SDL_Window *window;
+static SDL_Renderer *renderer;
+static SDL_Surface *surface;
+static int done;
 
-void DrawChessBoard()
+
+static void DrawChessBoard(void)
 {
     int row = 0, column = 0, x = 0;
     SDL_FRect rect;
@@ -57,7 +59,7 @@ void DrawChessBoard()
     }
 }
 
-void loop()
+static void loop(void)
 {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
@@ -100,8 +102,21 @@ void loop()
 
 int main(int argc, char *argv[])
 {
+    SDLTest_CommonState *state;
+
+    /* Initialize test framework */
+    state = SDLTest_CommonCreateState(argv, 0);
+    if (state == NULL) {
+        return 1;
+    }
+
     /* Enable standard application logging */
     SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
+
+    /* Parse commandline */
+    if (!SDLTest_CommonDefaultArgs(state, argc, argv)) {
+        return 1;
+    }
 
     /* Initialize SDL */
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
@@ -110,7 +125,7 @@ int main(int argc, char *argv[])
     }
 
     /* Create window and renderer for given surface */
-    window = SDL_CreateWindow("Chess Board", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 640, 480, SDL_WINDOW_RESIZABLE);
+    window = SDL_CreateWindow("Chess Board", 640, 480, SDL_WINDOW_RESIZABLE);
     if (window == NULL) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Window creation fail : %s\n", SDL_GetError());
         return 1;
@@ -137,5 +152,6 @@ int main(int argc, char *argv[])
 #endif
 
     SDL_Quit();
+    SDLTest_CommonDestroyState(state);
     return 0;
 }

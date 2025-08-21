@@ -60,12 +60,11 @@ extern SDL_Window *Vita_Window;
 /* Display and window functions */
 int VITA_VideoInit(_THIS);
 void VITA_VideoQuit(_THIS);
-void VITA_GetDisplayModes(_THIS, SDL_VideoDisplay *display);
+int VITA_GetDisplayModes(_THIS, SDL_VideoDisplay *display);
 int VITA_SetDisplayMode(_THIS, SDL_VideoDisplay *display, SDL_DisplayMode *mode);
 int VITA_CreateWindow(_THIS, SDL_Window *window);
 int VITA_CreateWindowFrom(_THIS, SDL_Window *window, const void *data);
 void VITA_SetWindowTitle(_THIS, SDL_Window *window);
-void VITA_SetWindowIcon(_THIS, SDL_Window *window, SDL_Surface *icon);
 void VITA_SetWindowPosition(_THIS, SDL_Window *window);
 void VITA_SetWindowSize(_THIS, SDL_Window *window);
 void VITA_ShowWindow(_THIS, SDL_Window *window);
@@ -94,7 +93,7 @@ int VITA_GLES_MakeCurrent(_THIS, SDL_Window *window, SDL_GLContext context);
 int VITA_GLES_SetSwapInterval(_THIS, int interval);
 int VITA_GLES_GetSwapInterval(_THIS, int *interval);
 int VITA_GLES_SwapWindow(_THIS, SDL_Window *window);
-void VITA_GLES_DeleteContext(_THIS, SDL_GLContext context);
+int VITA_GLES_DeleteContext(_THIS, SDL_GLContext context);
 #endif
 
 /* VITA on screen keyboard */

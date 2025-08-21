@@ -1414,7 +1414,7 @@ static void HandleInputEvents(SDL_Joystick *joystick)
         joystick->hwdata->fresh = SDL_FALSE;
     }
 
-    while ((len = read(joystick->hwdata->fd, events, (sizeof events))) > 0) {
+    while ((len = read(joystick->hwdata->fd, events, sizeof(events))) > 0) {
         len /= sizeof(events[0]);
         for (i = 0; i < len; ++i) {
             struct input_event *event = &events[i];
@@ -1449,6 +1449,7 @@ static void HandleInputEvents(SDL_Joystick *joystick)
                         HandleHat(SDL_EVDEV_GetEventTimestamp(event), joystick, hat_index, code % 2, event->value);
                         break;
                     }
+                    SDL_FALLTHROUGH;
                 default:
                     event->value = AxisCorrect(joystick, code, event->value);
                     SDL_SendJoystickAxis(SDL_EVDEV_GetEventTimestamp(event), joystick,
@@ -1495,7 +1496,7 @@ static void HandleClassicEvents(SDL_Joystick *joystick)
     SDL_AssertJoysticksLocked();
 
     joystick->hwdata->fresh = SDL_FALSE;
-    while ((len = read(joystick->hwdata->fd, events, (sizeof events))) > 0) {
+    while ((len = read(joystick->hwdata->fd, events, sizeof(events))) > 0) {
         len /= sizeof(events[0]);
         for (i = 0; i < len; ++i) {
             switch (events[i].type) {
@@ -1521,6 +1522,7 @@ static void HandleClassicEvents(SDL_Joystick *joystick)
                         HandleHat(timestamp, joystick, hat_index, code % 2, events[i].value);
                         break;
                     }
+                    SDL_FALLTHROUGH;
                 default:
                     SDL_SendJoystickAxis(timestamp, joystick,
                                             joystick->hwdata->abs_map[code],

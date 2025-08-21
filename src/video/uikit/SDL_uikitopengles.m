@@ -113,7 +113,7 @@ SDL_GLContext UIKit_GL_CreateContext(_THIS, SDL_Window *window)
     @autoreleasepool {
         SDLEAGLContext *context = nil;
         SDL_uikitopenglview *view;
-        SDL_WindowData *data = window->driverdata;
+        SDL_UIKitWindowData *data = (__bridge SDL_UIKitWindowData *)window->driverdata;
         CGRect frame = UIKit_ComputeViewFrame(window, data.uiwindow.screen);
         EAGLSharegroup *sharegroup = nil;
         CGFloat scale = 1.0;
@@ -185,7 +185,7 @@ SDL_GLContext UIKit_GL_CreateContext(_THIS, SDL_Window *window)
     }
 }
 
-void UIKit_GL_DeleteContext(_THIS, SDL_GLContext context)
+int UIKit_GL_DeleteContext(_THIS, SDL_GLContext context)
 {
     @autoreleasepool {
         /* The context was retained in SDL_GL_CreateContext, so we release it
@@ -193,6 +193,7 @@ void UIKit_GL_DeleteContext(_THIS, SDL_GLContext context)
          * context is deallocated. */
         CFRelease(context);
     }
+    return 0;
 }
 
 void UIKit_GL_RestoreCurrentContext(void)

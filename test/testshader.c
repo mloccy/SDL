@@ -13,6 +13,9 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <SDL3/SDL_test.h>
+
+#include "testutils.h"
 
 #include <stdlib.h>
 
@@ -231,7 +234,7 @@ static void DestroyShaderProgram(ShaderData *data)
     }
 }
 
-static SDL_bool InitShaders()
+static SDL_bool InitShaders(void)
 {
     int i;
 
@@ -285,7 +288,7 @@ static SDL_bool InitShaders()
     return SDL_TRUE;
 }
 
-static void QuitShaders()
+static void QuitShaders(void)
 {
     int i;
 
@@ -306,7 +309,7 @@ power_of_two(int input)
     return value;
 }
 
-GLuint
+static GLuint
 SDL_GL_LoadTexture(SDL_Surface *surface, GLfloat *texcoord)
 {
     GLuint texture;
@@ -356,7 +359,7 @@ SDL_GL_LoadTexture(SDL_Surface *surface, GLfloat *texcoord)
 }
 
 /* A general OpenGL initialization function.    Sets all of the initial parameters. */
-void InitGL(int Width, int Height) /* We call this right after our OpenGL window is created. */
+static void InitGL(int Width, int Height) /* We call this right after our OpenGL window is created. */
 {
     GLdouble aspect;
 
@@ -377,7 +380,7 @@ void InitGL(int Width, int Height) /* We call this right after our OpenGL window
 }
 
 /* The main drawing function. */
-void DrawGLScene(SDL_Window *window, GLuint texture, GLfloat *texcoord)
+static void DrawGLScene(SDL_Window *window, GLuint texture, GLfloat *texcoord)
 {
     /* Texture coordinate lookup, to make it simple */
     enum
@@ -440,14 +443,43 @@ void DrawGLScene(SDL_Window *window, GLuint texture, GLfloat *texcoord)
 
 int main(int argc, char **argv)
 {
+    int i;
     int done;
     SDL_Window *window;
+    char *filename = NULL;
     SDL_Surface *surface;
     GLuint texture;
     GLfloat texcoords[4];
+    SDLTest_CommonState *state;
+
+    /* Initialize test framework */
+    state = SDLTest_CommonCreateState(argv, 0);
+    if (state == NULL) {
+        return 1;
+    }
 
     /* Enable standard application logging */
     SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
+
+    /* Parse commandline */
+    for (i = 1; i < argc;) {
+        int consumed;
+
+        consumed = SDLTest_CommonArg(state, i);
+        if (!consumed) {
+            if (!filename) {
+                filename = argv[i];
+                consumed = 1;
+            }
+        }
+        if (consumed <= 0) {
+            static const char *options[] = { "[icon.bmp]", NULL };
+            SDLTest_CommonLogUsage(state, argv[0], options);
+            exit(1);
+        }
+
+        i += consumed;
+    }
 
     /* Initialize SDL for video output */
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -456,7 +488,7 @@ int main(int argc, char **argv)
     }
 
     /* Create a 640x480 OpenGL screen */
-    window = SDL_CreateWindow("Shader Demo", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, SDL_WINDOW_OPENGL);
+    window = SDL_CreateWindow("Shader Demo", 640, 480, SDL_WINDOW_OPENGL);
     if (window == NULL) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to create OpenGL window: %s\n", SDL_GetError());
         SDL_Quit();
@@ -469,7 +501,10 @@ int main(int argc, char **argv)
         exit(2);
     }
 
-    surface = SDL_LoadBMP("icon.bmp");
+    filename = GetResourceFilename(NULL, "icon.bmp");
+    surface = SDL_LoadBMP(filename);
+    SDL_free(filename);
+
     if (surface == NULL) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to load icon.bmp: %s\n", SDL_GetError());
         SDL_Quit();
@@ -509,6 +544,7 @@ int main(int argc, char **argv)
     }
     QuitShaders();
     SDL_Quit();
+    SDLTest_CommonDestroyState(state);
     return 1;
 }
 

@@ -32,8 +32,8 @@ static SDL_FRect positions[NUM_SPRITES];
 static SDL_FRect velocities[NUM_SPRITES];
 static int sprite_w, sprite_h;
 
-SDL_Renderer *renderer;
-int done;
+static SDL_Renderer *renderer;
+static int done;
 
 /* Call this instead of exit(), so we can clean up SDL: atexit() is evil. */
 static void
@@ -43,7 +43,7 @@ quit(int rc)
     exit(rc);
 }
 
-void MoveSprites()
+static void MoveSprites(void)
 {
     int i;
     int window_w = WINDOW_WIDTH;
@@ -77,7 +77,7 @@ void MoveSprites()
     SDL_RenderPresent(renderer);
 }
 
-void loop()
+static void loop(void)
 {
     SDL_Event event;
 
@@ -102,6 +102,11 @@ int main(int argc, char *argv[])
 
     /* Enable standard application logging */
     SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
+
+    if (argc > 1) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "USAGE: %s\n", argv[0]);
+        quit(1);
+    }
 
     if (SDL_CreateWindowAndRenderer(WINDOW_WIDTH, WINDOW_HEIGHT, 0, &window, &renderer) < 0) {
         quit(2);

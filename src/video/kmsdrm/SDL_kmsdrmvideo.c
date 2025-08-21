@@ -24,10 +24,10 @@
 #if SDL_VIDEO_DRIVER_KMSDRM
 
 /* SDL internals */
-#include "../SDL_sysvideo.h"
 #include "../../events/SDL_events_c.h"
-#include "../../events/SDL_mouse_c.h"
 #include "../../events/SDL_keyboard_c.h"
+#include "../../events/SDL_mouse_c.h"
+#include "../SDL_sysvideo.h"
 
 #ifdef SDL_INPUT_LINUXEV
 #include "../../core/linux/SDL_evdev.h"
@@ -38,18 +38,18 @@
 #include <SDL3/SDL_syswm.h>
 
 /* KMS/DRM declarations */
-#include "SDL_kmsdrmvideo.h"
-#include "SDL_kmsdrmevents.h"
-#include "SDL_kmsdrmopengles.h"
-#include "SDL_kmsdrmmouse.h"
 #include "SDL_kmsdrmdyn.h"
+#include "SDL_kmsdrmevents.h"
+#include "SDL_kmsdrmmouse.h"
+#include "SDL_kmsdrmvideo.h"
+#include "SDL_kmsdrmopengles.h"
 #include "SDL_kmsdrmvulkan.h"
-#include <sys/stat.h>
-#include <sys/param.h>
-#include <sys/utsname.h>
 #include <dirent.h>
-#include <poll.h>
 #include <errno.h>
+#include <poll.h>
+#include <sys/param.h>
+#include <sys/stat.h>
+#include <sys/utsname.h>
 
 #ifdef __OpenBSD__
 static SDL_bool moderndri = SDL_FALSE;
@@ -218,7 +218,7 @@ static int KMSDRM_Available(void)
 
     kmsdrm_dri_pathsize = SDL_strlen(kmsdrm_dri_path);
     kmsdrm_dri_devnamesize = SDL_strlen(kmsdrm_dri_devname);
-    (void)SDL_snprintf(kmsdrm_dri_cardpath, sizeof kmsdrm_dri_cardpath, "%s%s",
+    (void)SDL_snprintf(kmsdrm_dri_cardpath, sizeof(kmsdrm_dri_cardpath), "%s%s",
                        kmsdrm_dri_path, kmsdrm_dri_devname);
 
     ret = get_driindex();
@@ -285,7 +285,6 @@ static SDL_VideoDevice *KMSDRM_CreateDevice(void)
     device->CreateSDLWindow = KMSDRM_CreateWindow;
     device->CreateSDLWindowFrom = KMSDRM_CreateWindowFrom;
     device->SetWindowTitle = KMSDRM_SetWindowTitle;
-    device->SetWindowIcon = KMSDRM_SetWindowIcon;
     device->SetWindowPosition = KMSDRM_SetWindowPosition;
     device->SetWindowSize = KMSDRM_SetWindowSize;
     device->SetWindowFullscreen = KMSDRM_SetWindowFullscreen;
@@ -323,7 +322,7 @@ static SDL_VideoDevice *KMSDRM_CreateDevice(void)
 
 cleanup:
     if (device) {
-    	SDL_free(device);
+        SDL_free(device);
     }
 
     if (viddata) {
@@ -627,7 +626,7 @@ static SDL_bool KMSDRM_ConnectorCheckVrrCapable(uint32_t drm_fd,
     return SDL_FALSE;
 }
 
-void KMSDRM_CrtcSetVrr(uint32_t drm_fd, uint32_t crtc_id, SDL_bool enabled)
+static void KMSDRM_CrtcSetVrr(uint32_t drm_fd, uint32_t crtc_id, SDL_bool enabled)
 {
     uint32_t vrr_prop_id;
     if (!KMSDRM_VrrPropId(drm_fd, crtc_id, &vrr_prop_id)) {
@@ -915,7 +914,7 @@ static int KMSDRM_InitDisplays(_THIS)
     int i;
 
     /* Open /dev/dri/cardNN (/dev/drmN if on OpenBSD version less than 6.9) */
-    (void)SDL_snprintf(viddata->devpath, sizeof viddata->devpath, "%s%d",
+    (void)SDL_snprintf(viddata->devpath, sizeof(viddata->devpath), "%s%d",
                        kmsdrm_dri_cardpath, viddata->devindex);
 
     SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Opening device %s", viddata->devpath);
@@ -1199,7 +1198,7 @@ int KMSDRM_CreateSurfaces(_THIS, SDL_Window *window)
        but we need an EGL surface NOW, or GL won't be able to render into any surface
        and we won't see the first frame. */
     SDL_EGL_SetRequiredVisualId(_this, surface_fmt);
-    windata->egl_surface = SDL_EGL_CreateSurface(_this, (NativeWindowType)windata->gs);
+    windata->egl_surface = SDL_EGL_CreateSurface(_this, window, (NativeWindowType)windata->gs);
 
     if (windata->egl_surface == EGL_NO_SURFACE) {
         ret = SDL_SetError("Could not create EGL window surface");
@@ -1281,7 +1280,7 @@ void KMSDRM_VideoQuit(_THIS)
 }
 
 /* Read modes from the connector modes, and store them in display->display_modes. */
-void KMSDRM_GetDisplayModes(_THIS, SDL_VideoDisplay *display)
+int KMSDRM_GetDisplayModes(_THIS, SDL_VideoDisplay *display)
 {
     SDL_DisplayData *dispdata = display->driverdata;
     drmModeConnector *conn = dispdata->connector;
@@ -1306,6 +1305,7 @@ void KMSDRM_GetDisplayModes(_THIS, SDL_VideoDisplay *display)
             SDL_free(modedata);
         }
     }
+    return 0;
 }
 
 int KMSDRM_SetDisplayMode(_THIS, SDL_VideoDisplay *display, SDL_DisplayMode *mode)
@@ -1557,9 +1557,6 @@ int KMSDRM_CreateWindowFrom(_THIS, SDL_Window *window, const void *data)
 }
 
 void KMSDRM_SetWindowTitle(_THIS, SDL_Window *window)
-{
-}
-void KMSDRM_SetWindowIcon(_THIS, SDL_Window *window, SDL_Surface *icon)
 {
 }
 void KMSDRM_SetWindowPosition(_THIS, SDL_Window *window)

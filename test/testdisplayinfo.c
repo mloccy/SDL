@@ -16,6 +16,7 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <SDL3/SDL_test.h>
 
 static void
 print_mode(const char *prefix, const SDL_DisplayMode *mode)
@@ -35,9 +36,21 @@ int main(int argc, char *argv[])
     const SDL_DisplayMode **modes;
     const SDL_DisplayMode *mode;
     int num_displays, i;
+    SDLTest_CommonState *state;
+
+    /* Initialize test framework */
+    state = SDLTest_CommonCreateState(argv, 0);
+    if (state == NULL) {
+        return 1;
+    }
 
     /* Enable standard application logging */
     SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
+
+    /* Parse commandline */
+    if (!SDLTest_CommonDefaultArgs(state, argc, argv)) {
+        return 1;
+    }
 
     /* Load the SDL library */
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -53,18 +66,11 @@ int main(int argc, char *argv[])
     for (i = 0; i < num_displays; i++) {
         SDL_DisplayID dpy = displays[i];
         SDL_Rect rect = { 0, 0, 0, 0 };
-        float ddpi, hdpi, vdpi;
         int m, num_modes = 0;
 
         SDL_GetDisplayBounds(dpy, &rect);
         modes = SDL_GetFullscreenDisplayModes(dpy, &num_modes);
         SDL_Log("%" SDL_PRIu32 ": \"%s\" (%dx%d, (%d, %d)), %d fullscreen modes.\n", dpy, SDL_GetDisplayName(dpy), rect.w, rect.h, rect.x, rect.y, num_modes);
-
-        if (SDL_GetDisplayPhysicalDPI(dpy, &ddpi, &hdpi, &vdpi) == -1) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "    DPI: failed to query (%s)\n", SDL_GetError());
-        } else {
-            SDL_Log("    DPI: ddpi=%f; hdpi=%f; vdpi=%f\n", ddpi, hdpi, vdpi);
-        }
 
         mode = SDL_GetCurrentDisplayMode(dpy);
         if (mode) {
@@ -82,8 +88,8 @@ int main(int argc, char *argv[])
 
         for (m = 0; m < num_modes; m++) {
             char prefix[64];
-            (void)SDL_snprintf(prefix, sizeof prefix, "    MODE %d", m);
-            print_mode(prefix, modes[i]);
+            (void)SDL_snprintf(prefix, sizeof(prefix), "    MODE %d", m);
+            print_mode(prefix, modes[m]);
         }
         SDL_free(modes);
 
@@ -92,5 +98,6 @@ int main(int argc, char *argv[])
     SDL_free(displays);
 
     SDL_Quit();
+    SDLTest_CommonDestroyState(state);
     return 0;
 }

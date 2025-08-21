@@ -47,7 +47,7 @@ static int use_rendergeometry = 0;
 /* -1: infinite random moves (default); >=0: enables N deterministic moves */
 static int iterations = -1;
 
-int done;
+static int done;
 
 /* Call this instead of exit(), so we can clean up SDL: atexit() is evil. */
 static void
@@ -65,7 +65,7 @@ quit(int rc)
     }
 }
 
-int LoadSprite(const char *file)
+static int LoadSprite(const char *file)
 {
     int i, w, h;
 
@@ -88,7 +88,7 @@ int LoadSprite(const char *file)
     return 0;
 }
 
-void MoveSprites(SDL_Renderer *renderer, SDL_Texture *sprite)
+static void MoveSprites(SDL_Renderer *renderer, SDL_Texture *sprite)
 {
     int i;
     SDL_Rect viewport;
@@ -126,7 +126,7 @@ void MoveSprites(SDL_Renderer *renderer, SDL_Texture *sprite)
     }
 
     /* Draw a gray background */
-    SDL_SetRenderDrawColor(renderer, 0xA0, 0xA0, 0xA0, 0xFF);
+    SDL_SetRenderDrawColor(renderer, 0xA0, 0xA0, 0xA0, 0x00 /* used with --transparent */);
     SDL_RenderClear(renderer);
 
     /* Test points */
@@ -396,7 +396,7 @@ void MoveSprites(SDL_Renderer *renderer, SDL_Texture *sprite)
     SDL_RenderPresent(renderer);
 }
 
-void loop()
+static void loop(void)
 {
     Uint64 now;
     int i;
@@ -465,6 +465,9 @@ int main(int argc, char *argv[])
                     } else if (SDL_strcasecmp(argv[i + 1], "mod") == 0) {
                         blendMode = SDL_BLENDMODE_MOD;
                         consumed = 2;
+                    } else if (SDL_strcasecmp(argv[i + 1], "mul") == 0) {
+                        blendMode = SDL_BLENDMODE_MUL;
+                        consumed = 2;
                     } else if (SDL_strcasecmp(argv[i + 1], "sub") == 0) {
                         blendMode = SDL_ComposeCustomBlendMode(SDL_BLENDFACTOR_SRC_ALPHA, SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_SUBTRACT, SDL_BLENDFACTOR_ZERO, SDL_BLENDFACTOR_ONE, SDL_BLENDOPERATION_SUBTRACT);
                         consumed = 2;
@@ -508,7 +511,7 @@ int main(int argc, char *argv[])
         }
         if (consumed < 0) {
             static const char *options[] = {
-                "[--blend none|blend|add|mod]",
+                "[--blend none|blend|add|mod|mul|sub]",
                 "[--cyclecolor]",
                 "[--cyclealpha]",
                 "[--iterations N]",

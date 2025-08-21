@@ -22,7 +22,7 @@
 /**
  *  \file SDL_syswm.h
  *
- *  Include file for SDL custom system window manager hooks.
+ *  \brief Include file for SDL custom system window manager hooks.
  */
 
 #ifndef SDL_syswm_h_
@@ -106,7 +106,7 @@
 #endif /* !SDL_DISABLE_SYSWM_WINRT */
 
 #ifndef SDL_DISABLE_SYSWM_X11
-#if defined(__unix__) && !defined(__WIN32__) && !defined(__ANDROID__)
+#if defined(__unix__) && !defined(__WIN32__) && !defined(__ANDROID__) && !defined(__QNX__)
 #define SDL_ENABLE_SYSWM_X11
 #endif
 #endif /* !SDL_DISABLE_SYSWM_X11 */

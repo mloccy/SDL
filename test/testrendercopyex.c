@@ -33,8 +33,8 @@ typedef struct
     int scale_direction;
 } DrawState;
 
-DrawState *drawstates;
-int done;
+static DrawState *drawstates;
+static int done;
 
 /* Call this instead of exit(), so we can clean up SDL: atexit() is evil. */
 static void
@@ -44,7 +44,7 @@ quit(int rc)
     exit(rc);
 }
 
-void Draw(DrawState *s)
+static void Draw(DrawState *s)
 {
     SDL_Rect viewport;
     SDL_Texture *target;
@@ -86,7 +86,7 @@ void Draw(DrawState *s)
     /* SDL_Delay(10); */
 }
 
-void loop()
+static void loop(void)
 {
     int i;
     SDL_Event event;
@@ -115,14 +115,14 @@ int main(int argc, char *argv[])
     int frames;
     Uint64 then, now;
 
-    /* Enable standard application logging */
-    SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
-
     /* Initialize test framework */
     state = SDLTest_CommonCreateState(argv, SDL_INIT_VIDEO);
     if (state == NULL) {
         return 1;
     }
+
+    /* Enable standard application logging */
+    SDL_LogSetPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_INFO);
 
     if (!SDLTest_CommonDefaultArgs(state, argc, argv) || !SDLTest_CommonInit(state)) {
         SDLTest_CommonQuit(state);

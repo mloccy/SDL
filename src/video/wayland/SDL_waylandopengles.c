@@ -115,16 +115,17 @@ int Wayland_GLES_SwapWindow(_THIS, SDL_Window *window)
      * FIXME: Request EGL_WAYLAND_swap_buffers_with_timeout.
      * -flibit
      */
-    if (window->flags & SDL_WINDOW_HIDDEN) {
+    if (data->surface_status != WAYLAND_SURFACE_STATUS_SHOWN &&
+        data->surface_status != WAYLAND_SURFACE_STATUS_WAITING_FOR_FRAME) {
         return 0;
     }
 
     /* Control swap interval ourselves. See comments on Wayland_GLES_SetSwapInterval */
-    if (swap_interval != 0) {
+    if (swap_interval != 0 && data->surface_status == WAYLAND_SURFACE_STATUS_SHOWN) {
         SDL_VideoData *videodata = _this->driverdata;
         struct wl_display *display = videodata->display;
         /* 1 sec, so we'll progress even if throttled to zero. */
-        const Uint64 max_wait = SDL_NS_PER_SECOND;
+        const Uint64 max_wait = SDL_GetTicksNS() + SDL_NS_PER_SECOND;
         while (SDL_AtomicGet(&data->swap_interval_ready) == 0) {
             Uint64 now;
 
@@ -187,10 +188,11 @@ int Wayland_GLES_MakeCurrent(_THIS, SDL_Window *window, SDL_GLContext context)
     return ret;
 }
 
-void Wayland_GLES_DeleteContext(_THIS, SDL_GLContext context)
+int Wayland_GLES_DeleteContext(_THIS, SDL_GLContext context)
 {
     SDL_EGL_DeleteContext(_this, context);
     WAYLAND_wl_display_flush(_this->driverdata->display);
+    return 0;
 }
 
 EGLSurface Wayland_GLES_GetEGLSurface(_THIS, SDL_Window *window)

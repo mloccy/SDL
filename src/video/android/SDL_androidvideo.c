@@ -44,7 +44,6 @@
 /* Initialization/Query functions */
 static int Android_VideoInit(_THIS);
 static void Android_VideoQuit(_THIS);
-int Android_GetDisplayPhysicalDPI(_THIS, SDL_VideoDisplay *display, float *ddpi, float *hdpi, float *vdpi);
 
 #include "../SDL_egl_c.h"
 #define Android_GLES_GetProcAddress  SDL_EGL_GetProcAddressInternal
@@ -66,10 +65,11 @@ static float Android_ScreenRate = 0.0f;
 SDL_sem *Android_PauseSem = NULL;
 SDL_sem *Android_ResumeSem = NULL;
 SDL_mutex *Android_ActivityMutex = NULL;
+static SDL_SystemTheme Android_SystemTheme;
 
-static void Android_SuspendScreenSaver(_THIS)
+static int Android_SuspendScreenSaver(_THIS)
 {
-    Android_JNI_SuspendScreenSaver(_this->suspend_screensaver);
+    return Android_JNI_SuspendScreenSaver(_this->suspend_screensaver);
 }
 
 static void Android_DeleteDevice(SDL_VideoDevice *device)
@@ -99,6 +99,7 @@ static SDL_VideoDevice *Android_CreateDevice(void)
     }
 
     device->driverdata = data;
+    device->system_theme = Android_SystemTheme;
 
     /* Set the function pointers */
     device->VideoInit = Android_VideoInit;
@@ -109,8 +110,6 @@ static SDL_VideoDevice *Android_CreateDevice(void)
     } else {
         device->PumpEvents = Android_PumpEvents_NonBlocking;
     }
-
-    device->GetDisplayPhysicalDPI = Android_GetDisplayPhysicalDPI;
 
     device->CreateSDLWindow = Android_CreateWindow;
     device->SetWindowTitle = Android_SetWindowTitle;
@@ -207,11 +206,6 @@ void Android_VideoQuit(_THIS)
     Android_QuitTouch();
 }
 
-int Android_GetDisplayPhysicalDPI(_THIS, SDL_VideoDisplay *display, float *ddpi, float *hdpi, float *vdpi)
-{
-    return Android_JNI_GetDisplayPhysicalDPI(ddpi, hdpi, vdpi);
-}
-
 void Android_SetScreenResolution(int surfaceWidth, int surfaceHeight, int deviceWidth, int deviceHeight, float density, float rate)
 {
     Android_SurfaceWidth = surfaceWidth;
@@ -289,6 +283,21 @@ void Android_SendResize(SDL_Window *window)
         int w = (int)SDL_floorf(Android_SurfaceWidth / Android_ScreenDensity);
         int h = (int)SDL_floorf(Android_SurfaceHeight / Android_ScreenDensity);
         SDL_SendWindowEvent(window, SDL_EVENT_WINDOW_RESIZED, w, h);
+    }
+}
+
+void Android_SetDarkMode(SDL_bool enabled)
+{
+    SDL_VideoDevice *device = SDL_GetVideoDevice();
+
+    if (enabled) {
+        Android_SystemTheme = SDL_SYSTEM_THEME_DARK;
+    } else {
+        Android_SystemTheme = SDL_SYSTEM_THEME_LIGHT;
+    }
+
+    if (device) {
+        SDL_SetSystemTheme(Android_SystemTheme);
     }
 }
 

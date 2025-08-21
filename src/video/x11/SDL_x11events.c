@@ -36,6 +36,7 @@
 #include "../../events/SDL_events_c.h"
 #include "../../events/SDL_mouse_c.h"
 #include "../../events/SDL_touch_c.h"
+#include "../../core/linux/SDL_system_theme.h"
 
 #include <SDL3/SDL_syswm.h>
 
@@ -753,6 +754,30 @@ static int XLookupStringAsUTF8(XKeyEvent *event_struct, char *buffer_return, int
     return result;
 }
 
+void X11_GetBorderValues(SDL_WindowData *data)
+{
+    SDL_VideoData *videodata = data->videodata;
+    Display *display = videodata->display;
+
+    Atom type;
+    int format;
+    unsigned long nitems, bytes_after;
+    unsigned char *property;
+    if (X11_XGetWindowProperty(display, data->xwindow, videodata->_NET_FRAME_EXTENTS, 0, 16, 0, XA_CARDINAL, &type, &format, &nitems, &bytes_after, &property) == Success) {
+        if (type != None && nitems == 4) {
+            data->border_left = (int)((long *)property)[0];
+            data->border_right = (int)((long *)property)[1];
+            data->border_top = (int)((long *)property)[2];
+            data->border_bottom = (int)((long *)property)[3];
+        }
+        X11_XFree(property);
+
+#ifdef DEBUG_XEVENTS
+        printf("New _NET_FRAME_EXTENTS: left=%d right=%d, top=%d, bottom=%d\n", data->border_left, data->border_right, data->border_top, data->border_bottom);
+#endif
+    }
+}
+
 static void X11_DispatchEvent(_THIS, XEvent *xevent)
 {
     SDL_VideoData *videodata = _this->driverdata;
@@ -1167,14 +1192,26 @@ static void X11_DispatchEvent(_THIS, XEvent *xevent)
 
         if (xevent->xconfigure.x != data->last_xconfigure.x ||
             xevent->xconfigure.y != data->last_xconfigure.y) {
+            SDL_Window *w;
+            int x = xevent->xconfigure.x;
+            int y = xevent->xconfigure.y;
+
+            SDL_GlobalToRelativeForWindow(data->window, x, y, &x, &y);
             SDL_SendWindowEvent(data->window, SDL_EVENT_WINDOW_MOVED,
-                                xevent->xconfigure.x, xevent->xconfigure.y);
+                                x, y);
+
 #ifdef SDL_USE_IME
             if (SDL_EventEnabled(SDL_EVENT_TEXT_INPUT)) {
                 /* Update IME candidate list position */
                 SDL_IME_UpdateTextRect(NULL);
             }
 #endif
+            for (w = data->window->first_child; w != NULL; w = w->next_sibling) {
+                /* Don't update hidden child windows, their relative position doesn't change */
+                if (!(w->flags & SDL_WINDOW_HIDDEN)) {
+                    X11_UpdateWindowPosition(w);
+                }
+            }
         }
         if (xevent->xconfigure.width != data->last_xconfigure.width ||
             xevent->xconfigure.height != data->last_xconfigure.height) {
@@ -1222,6 +1259,18 @@ static void X11_DispatchEvent(_THIS, XEvent *xevent)
             }
             printf("Action requested by user is : %s\n", X11_XGetAtomName(display, act));
 #endif
+            {
+                /* Drag and Drop position */
+                int root_x, root_y, window_x, window_y;
+                Window ChildReturn;
+                root_x = xevent->xclient.data.l[2] >> 16;
+                root_y = xevent->xclient.data.l[2] & 0xffff;
+                /* Translate from root to current window position */
+                X11_XTranslateCoordinates(display, DefaultRootWindow(display), data->xwindow,
+                        root_x, root_y, &window_x, &window_y, &ChildReturn);
+
+                SDL_SendDropPosition(data->window, NULL, (float)window_x, (float)window_y); /* FIXME, can we get the filename ? */
+            }
 
             /* reply with status */
             SDL_memset(&m, 0, sizeof(XClientMessageEvent));
@@ -1488,23 +1537,7 @@ static void X11_DispatchEvent(_THIS, XEvent *xevent)
                right approach, but it seems to work. */
             X11_UpdateKeymap(_this, SDL_TRUE);
         } else if (xevent->xproperty.atom == videodata->_NET_FRAME_EXTENTS) {
-            Atom type;
-            int format;
-            unsigned long nitems, bytes_after;
-            unsigned char *property;
-            if (X11_XGetWindowProperty(display, data->xwindow, videodata->_NET_FRAME_EXTENTS, 0, 16, 0, XA_CARDINAL, &type, &format, &nitems, &bytes_after, &property) == Success) {
-                if (type != None && nitems == 4) {
-                    data->border_left = (int)((long *)property)[0];
-                    data->border_right = (int)((long *)property)[1];
-                    data->border_top = (int)((long *)property)[2];
-                    data->border_bottom = (int)((long *)property)[3];
-                }
-                X11_XFree(property);
-
-#ifdef DEBUG_XEVENTS
-                printf("New _NET_FRAME_EXTENTS: left=%d right=%d, top=%d, bottom=%d\n", data->border_left, data->border_right, data->border_top, data->border_bottom);
-#endif
-            }
+            X11_GetBorderValues(data);
         }
     } break;
 
@@ -1671,6 +1704,10 @@ int X11_WaitEventTimeout(_THIS, Sint64 timeoutNS)
         SDL_IME_PumpEvents();
     }
 #endif
+
+#ifdef SDL_USE_LIBDBUS
+    SDL_SystemTheme_PumpEvents();
+#endif
     return 1;
 }
 
@@ -1713,6 +1750,10 @@ void X11_PumpEvents(_THIS)
     }
 #endif
 
+#ifdef SDL_USE_LIBDBUS
+    SDL_SystemTheme_PumpEvents();
+#endif
+
     /* FIXME: Only need to do this when there are pending focus changes */
     X11_HandleFocusChanges(_this);
 
@@ -1726,7 +1767,7 @@ void X11_PumpEvents(_THIS)
     }
 }
 
-void X11_SuspendScreenSaver(_THIS)
+int X11_SuspendScreenSaver(_THIS)
 {
 #if SDL_VIDEO_DRIVER_X11_XSCRNSAVER
     SDL_VideoData *data = _this->driverdata;
@@ -1736,7 +1777,7 @@ void X11_SuspendScreenSaver(_THIS)
 
 #if SDL_USE_LIBDBUS
     if (SDL_DBus_ScreensaverInhibit(_this->suspend_screensaver)) {
-        return;
+        return 0;
     }
 
     if (_this->suspend_screensaver) {
@@ -1751,13 +1792,15 @@ void X11_SuspendScreenSaver(_THIS)
             !X11_XScreenSaverQueryVersion(data->display,
                                           &major_version, &minor_version) ||
             major_version < 1 || (major_version == 1 && minor_version < 1)) {
-            return;
+            return SDL_Unsupported();
         }
 
         X11_XScreenSaverSuspend(data->display, _this->suspend_screensaver);
         X11_XResetScreenSaver(data->display);
+        return 0;
     }
 #endif
+    return SDL_Unsupported();
 }
 
 #endif /* SDL_VIDEO_DRIVER_X11 */
