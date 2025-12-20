@@ -4,8 +4,24 @@ if(NOT DEFINED CMAKE_BUILD_TYPE)
   set(cmake_build_type_undefined 1)
 endif()
 
+include (cmake/HunterGate.cmake)
+HunterGate(
+    URL "https://github.com/mloccy/hunter/archive/refs/tags/v0.25.62.tar.gz"
+    SHA1 "2925c46cfca746106497f648e2eb9f3d0d411994"
+    LOCAL)
+
 # See docs/release_checklist.md
-project(SDL3 LANGUAGES C VERSION "3.3.6")
+project(SDL3 VERSION "3.3.6")
+
+if (LINUX)
+    hunter_add_package(x11)
+    hunter_add_package(xfixes)
+    hunter_add_package(xi)
+    hunter_add_package(xcursor)
+    hunter_add_package(xrandr)
+    hunter_add_package(xtst)
+    hunter_add_package(xscrnsaver)
+endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
   set(SDL3_MAINPROJECT ON)
