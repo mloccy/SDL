@@ -362,6 +362,13 @@ macro(CheckX11)
             set(SDL_VIDEO_DRIVER_X11_DYNAMIC "\"${X11_LIB_SONAME}\"")
           else()
             sdl_link_dependency(x11 LIBS X11::X11 CMAKE_MODULE X11 PKG_CONFIG_SPECS ${X11_PKG_CONFIG_SPEC})
+            sdl_link_dependency(Xau LIBS X11::Xau CMAKE_MODULE X11 PKG_CONFIG_SPECS ${Xau_PKG_CONFIG_SPEC})
+            sdl_link_dependency(xcb LIBS X11::xcb CMAKE_MODULE X11 PKG_CONFIG_SPECS ${Xcb_PKG_CONFIG_SPEC})
+
+            sdl_test_link_dependency(x11 LIBS X11::X11 CMAKE_MODULE X11 PKG_CONFIG_SPECS ${X11_PKG_CONFIG_SPEC})
+            sdl_test_link_dependency(Xau LIBS X11::Xau LINK_OPTIONS -lXau CMAKE_MODULE X11 PKG_CONFIG_SPECS ${Xau_PKG_CONFIG_SPEC})
+            sdl_test_link_dependency(xcb LIBS X11::xcb LINK_OPTIONS -lXau CMAKE_MODULE X11 PKG_CONFIG_SPECS ${Xcb_PKG_CONFIG_SPEC})
+
           endif()
         endif()
         if(XEXT_LIB)
@@ -372,10 +379,15 @@ macro(CheckX11)
           endif()
         endif()
       else()
+
         sdl_link_dependency(x11 LIBS X11::X11 CMAKE_MODULE X11 PKG_CONFIG_SPECS ${X11_PKG_CONFIG_SPEC})
-        sdl_link_dependency(xext LIBS X11::Xext CMAKE_MODULE X11 PKG_CONFIG_SPECS ${Xext_PKG_CONFIG_SPEC})
-        sdl_link_dependency(xcb LIBS X11::xcb CMAKE_MODULE X11 PKG_CONFIG_SPECS ${Xcb_PKG_CONFIG_SPEC})
-        sdl_link_dependency(Xau LIBS X11::Xau CMAKE_MODULE X11 PKG_CONFIG_SPECS ${Xau_PKG_CONFIG_SPEC})
+        sdl_link_dependency(Xau LIBS X11::Xau LINK_OPTIONS -lXau CMAKE_MODULE X11 PKG_CONFIG_SPECS ${Xau_PKG_CONFIG_SPEC})
+        sdl_link_dependency(xcb LIBS X11::xcb LINK_OPTIONS -lXau CMAKE_MODULE X11 PKG_CONFIG_SPECS ${Xcb_PKG_CONFIG_SPEC})
+
+        sdl_test_link_dependency(x11 LIBS X11::X11 CMAKE_MODULE X11 PKG_CONFIG_SPECS ${X11_PKG_CONFIG_SPEC})
+        sdl_test_link_dependency(Xau LIBS X11::Xau LINK_OPTIONS -lXau CMAKE_MODULE X11 PKG_CONFIG_SPECS ${Xau_PKG_CONFIG_SPEC})
+        sdl_test_link_dependency(xcb LIBS X11::xcb LINK_OPTIONS -lXau CMAKE_MODULE X11 PKG_CONFIG_SPECS ${Xcb_PKG_CONFIG_SPEC})
+
       endif()
 
       list(APPEND CMAKE_REQUIRED_LIBRARIES ${X11_LIB})

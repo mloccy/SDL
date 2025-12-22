@@ -6,8 +6,8 @@ endif()
 
 include (cmake/HunterGate.cmake)
 HunterGate(
-    URL "https://github.com/mloccy/hunter/archive/refs/tags/v0.25.62.tar.gz"
-    SHA1 "2925c46cfca746106497f648e2eb9f3d0d411994"
+    URL "https://github.com/mloccy/hunter/archive/refs/tags/v0.25.64.tar.gz"
+    SHA1 "8b016bbfb7a8f0048868cb9b0704279e51507173"
     LOCAL)
 
 # See docs/release_checklist.md
@@ -21,6 +21,10 @@ if (LINUX)
     hunter_add_package(xrandr)
     hunter_add_package(xtst)
     hunter_add_package(xscrnsaver)
+    hunter_add_package(wayland)
+    hunter_add_package(wayland-protocols)
+    hunter_add_package(xkbcommon)
+    hunter_add_package(libglvnd)
 endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
