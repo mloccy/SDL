@@ -7,7 +7,7 @@ endif()
 include (cmake/HunterGate.cmake)
 HunterGate(
     URL "https://github.com/mloccy/hunter/archive/refs/tags/v0.25.64.tar.gz"
-    SHA1 "8b016bbfb7a8f0048868cb9b0704279e51507173"
+    SHA1 "a6a4462ad48c12ca658ed35809b64e0fcf31d100"
     LOCAL)
 
 # See docs/release_checklist.md
@@ -4017,6 +4017,9 @@ if(SDL_SHARED)
   set_property(TARGET SDL3-shared PROPERTY INTERFACE_SDL3_SHARED TRUE)
   set_property(TARGET SDL3-shared APPEND PROPERTY COMPATIBLE_INTERFACE_STRING "SDL_VERSION")
   set_property(TARGET SDL3-shared PROPERTY INTERFACE_SDL_VERSION "SDL${SDL3_VERSION_MAJOR}")
+  if (NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    set(CMAKE_PCH_PROLOGUE "")
+  endif()
   if(NOT CMAKE_VERSION VERSION_LESS "3.16")
     target_precompile_headers(SDL3-shared PRIVATE "$<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${PROJECT_SOURCE_DIR}/src/SDL_internal.h>")
   endif()

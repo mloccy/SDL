@@ -76,7 +76,7 @@ function(sdl_generic_link_dependency ID)
   foreach(target IN LISTS ARGS_STATIC_TARGETS)
     if(TARGET ${target})
       target_include_directories(${target} SYSTEM PRIVATE ${ARGS_INCLUDES})
-      target_link_libraries(${target} PRIVATE ${ARGS_LIBS})
+      target_link_libraries(${target} INTERFACE ${ARGS_LIBS})
       target_link_options(${target} INTERFACE ${ARGS_LINK_OPTIONS})
     endif()
   endforeach()
@@ -245,6 +245,7 @@ function(sdl_cmake_config_find_pkg_config_commands OUTPUT)
     get_property(PKG_CONFIG_PREFIX  TARGET ${ARGS_COLLECTOR} PROPERTY INTERFACE_SDL_DEP_${ID}_PKG_CONFIG_PREFIX)
     get_property(PKG_CONFIG_SPECS   TARGET ${ARGS_COLLECTOR} PROPERTY INTERFACE_SDL_DEP_${ID}_PKG_CONFIG_SPECS)
     get_property(CMAKE_MODULE       TARGET ${ARGS_COLLECTOR} PROPERTY INTERFACE_SDL_DEP_${ID}_CMAKE_MODULE)
+
     if(CMAKE_MODULE AND NOT CMAKE_MODULE IN_LIST cmake_modules_seen)
       list(APPEND static_module_deps_checks
         "find_package(${CMAKE_MODULE})"
