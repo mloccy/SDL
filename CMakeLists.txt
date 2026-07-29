@@ -5,9 +5,11 @@ if(NOT DEFINED CMAKE_BUILD_TYPE)
 endif()
 
 include (cmake/HunterGate.cmake)
+
+
 HunterGate(
-    URL "https://github.com/mloccy/hunter/archive/refs/tags/v0.25.64.tar.gz"
-    SHA1 "a6a4462ad48c12ca658ed35809b64e0fcf31d100"
+    URL "https://github.com/mloccy/hunter/archive/refs/tags/v0.25.74.tar.gz"
+    SHA1 "bed921f51cbfbef638539a7b4d1ebc6522ce7738"
     LOCAL)
 
 # See docs/release_checklist.md
