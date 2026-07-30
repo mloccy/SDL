@@ -62,10 +62,11 @@ endfunction()
 # - PKG_CONFIG_LIBS: libs that will only end up in the Libs.private of the .pc file
 # - PKG_CONFIG_LINK_OPTIONS: ldflags that will only end up in the Libs.private of sdl3.pc
 # - CMAKE_MODULE: CMake module name of the dependency, used as argument of find_package
+# - HUNTER_MODULE: If it's found using hunter
 # - LIBS: list of libraries to link to (cmake and pkg-config)
 # - LINK_OPTIONS: list of link options (also used in pc file, unless PKG_CONFIG_LINK_OPTION is used)
 function(sdl_generic_link_dependency ID)
-  cmake_parse_arguments(ARGS "" "COLLECTOR" "SHARED_TARGETS;STATIC_TARGETS;INCLUDES;PKG_CONFIG_LINK_OPTIONS;PKG_CONFIG_LIBS;PKG_CONFIG_PREFIX;PKG_CONFIG_SPECS;CMAKE_MODULE;LIBS;LINK_OPTIONS" ${ARGN})
+  cmake_parse_arguments(ARGS "HUNTER_MODULE" "COLLECTOR" "SHARED_TARGETS;STATIC_TARGETS;INCLUDES;PKG_CONFIG_LINK_OPTIONS;PKG_CONFIG_LIBS;PKG_CONFIG_PREFIX;PKG_CONFIG_SPECS;CMAKE_MODULE;LIBS;LINK_OPTIONS" ${ARGN})
   foreach(target IN LISTS ARGS_SHARED_TARGETS)
     if(TARGET ${target})
       target_include_directories(${target} SYSTEM PRIVATE ${ARGS_INCLUDES})
@@ -92,6 +93,7 @@ function(sdl_generic_link_dependency ID)
   set_property(TARGET ${ARGS_COLLECTOR} APPEND PROPERTY INTERFACE_SDL_DEP_${ID}_LINK_OPTIONS ${ARGS_LINK_OPTIONS})
   set_property(TARGET ${ARGS_COLLECTOR} APPEND PROPERTY INTERFACE_SDL_DEP_${ID}_CMAKE_MODULE ${ARGS_CMAKE_MODULE})
   set_property(TARGET ${ARGS_COLLECTOR} APPEND PROPERTY INTERFACE_SDL_DEP_${ID}_INCLUDES ${ARGS_INCLUDES})
+  set_property(TARGET ${ARGS_COLLECTOR} APPEND PROPERTY INTERFACE_SDL_DEP_${ID}_HUNTER_MODULE ${ARGS_HUNTER_MODULE})
 endfunction()
 
 function(sdl_link_dependency )
@@ -245,14 +247,22 @@ function(sdl_cmake_config_find_pkg_config_commands OUTPUT)
     get_property(PKG_CONFIG_PREFIX  TARGET ${ARGS_COLLECTOR} PROPERTY INTERFACE_SDL_DEP_${ID}_PKG_CONFIG_PREFIX)
     get_property(PKG_CONFIG_SPECS   TARGET ${ARGS_COLLECTOR} PROPERTY INTERFACE_SDL_DEP_${ID}_PKG_CONFIG_SPECS)
     get_property(CMAKE_MODULE       TARGET ${ARGS_COLLECTOR} PROPERTY INTERFACE_SDL_DEP_${ID}_CMAKE_MODULE)
+    get_property(HUNTER_MODULE      TARGET ${ARGS_COLLECTOR} PROPERTY INTERFACE_SDL_DEP_${ID}_HUNTER_MODULE)
 
     if(CMAKE_MODULE AND NOT CMAKE_MODULE IN_LIST cmake_modules_seen)
-      list(APPEND static_module_deps_checks
-        "find_package(${CMAKE_MODULE})"
-        "if(NOT ${CMAKE_MODULE}_FOUND)"
-        "  set(${ARGS_CONFIG_COMPONENT_FOUND_NAME} OFF)"
-        "endif()"
-        )
+     
+      if (NOT HUNTER_MODULE)
+        list(APPEND static_module_deps_checks
+          "find_package(${CMAKE_MODULE})"
+          "if(NOT ${CMAKE_MODULE}_FOUND)"
+          "  set(${ARGS_CONFIG_COMPONENT_FOUND_NAME} OFF)"
+          "endif()"
+          )
+          else()
+            list(APPEND static_module_deps_checks
+              "find_package(${CMAKE_MODULE} CONFIG REQUIRED)"              
+            )
+        endif()
       list(APPEND cmake_modules_seen ${CMAKE_MODULE})
     endif()
     if(PKG_CONFIG_PREFIX AND PKG_CONFIG_SPECS)
